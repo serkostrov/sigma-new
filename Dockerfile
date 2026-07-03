@@ -3,7 +3,8 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# lockfile generated with npm 11; node:22-alpine ships npm 10
+RUN npm install -g npm@11 && npm ci
 
 FROM deps AS builder
 WORKDIR /app
