@@ -1,0 +1,12 @@
+Update environment variables, enhance permissions handling, and improve task and document management features
+
+- Updated Supabase project credentials in `.env` file.
+- Added `.env` to `.gitignore` to prevent sensitive data exposure.
+- Introduced new `start` script in `package.json` for server execution.
+- Configured Vite for Node.js server output.
+- Enhanced permissions checks in various components to manage document and task actions based on user roles.
+- Refactored navigation items in `AppLayout` for better role-based access.
+- Updated task and object forms to include new fields for managing foreman and brigade IDs.
+- Added review status handling for photos and tasks, including approval and rejection functionalities.
+
+This commit improves the overall security and functionality of the application.
