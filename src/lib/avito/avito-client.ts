@@ -1,6 +1,33 @@
 const AVITO_API_BASE = "https://api.avito.ru";
 
-export type AvitoApiError = {
+export class AvitoApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "AvitoApiError";
+    this.status = status;
+  }
+
+  isMessengerSubscriptionRequired(): boolean {
+    return (
+      this.status === 402 ||
+      this.message.includes("подписку с API мессенджера")
+    );
+  }
+}
+
+export function isAvitoMessengerSubscriptionError(error: unknown): boolean {
+  if (error instanceof AvitoApiError) {
+    return error.isMessengerSubscriptionRequired();
+  }
+  if (error instanceof Error) {
+    return error.message.includes("подписку с API мессенджера");
+  }
+  return false;
+}
+
+export type AvitoApiErrorBody = {
   error?: { code?: number; message?: string };
   errors?: string[];
   message?: string;
@@ -8,7 +35,7 @@ export type AvitoApiError = {
 
 async function parseAvitoError(res: Response, body: string): Promise<string> {
   try {
-    const json = JSON.parse(body) as AvitoApiError;
+    const json = JSON.parse(body) as AvitoApiErrorBody;
     if (json.errors?.length) return json.errors.join("; ");
     if (json.error?.message) return json.error.message;
     if (json.message) return json.message;
@@ -34,7 +61,7 @@ export async function avitoApiCall<T>(
 
   const body = await res.text();
   if (!res.ok) {
-    throw new Error(await parseAvitoError(res, body));
+    throw new AvitoApiError(await parseAvitoError(res, body), res.status);
   }
 
   if (!body) return {} as T;
@@ -71,6 +98,8 @@ export type AvitoMessagePayload = {
   direction?: "in" | "out";
   type?: string;
   content?: { text?: string };
+  message?: { text?: string };
+  text?: string;
 };
 
 export type AvitoChat = {
@@ -112,6 +141,8 @@ export function chatPhoto(chat: AvitoChat, selfUserId?: number): string | null {
 
 export function messageText(message: AvitoMessagePayload): string {
   if (message.content?.text) return message.content.text;
+  if (message.message?.text) return message.message.text;
+  if (message.text) return message.text;
   if (message.type && message.type !== "text") {
     return `[${message.type}]`;
   }

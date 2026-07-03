@@ -12,7 +12,6 @@ import {
   useConnectVk,
   useSendVkMessage,
   useSyncVkChat,
-  useSyncVkPeer,
   useVkAuthUrl,
   useVkChatStatus,
   useVkConversations,
@@ -130,9 +129,13 @@ export function VkChatPanel({ oauthCode }: { oauthCode?: string }) {
 
   const { data: status } = useVkChatStatus();
   const { data: conversations, isLoading: convLoading } = useVkConversations();
-  const { data: messages, isLoading: msgLoading } = useVkMessages(selectedPeer);
+  const {
+    data: messages,
+    isLoading: msgLoading,
+    isError: msgError,
+    error: msgErrorDetail,
+  } = useVkMessages(selectedPeer);
   const syncAll = useSyncVkChat();
-  const syncPeer = useSyncVkPeer();
   const send = useSendVkMessage();
   const connect = useConnectVk();
 
@@ -155,12 +158,6 @@ export function VkChatPanel({ oauthCode }: { oauthCode?: string }) {
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.connected]);
-
-  useEffect(() => {
-    if (selectedPeer == null) return;
-    syncPeer.mutate(selectedPeer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeer]);
 
   const activeConversation = conversations?.find((c) => c.peer_id === selectedPeer);
 
@@ -194,12 +191,15 @@ export function VkChatPanel({ oauthCode }: { oauthCode?: string }) {
             key={c.peer_id}
             item={c}
             active={selectedPeer === c.peer_id}
-            onClick={() => setSelectedPeer(c.peer_id)}
+            onClick={() => setSelectedPeer(Number(c.peer_id))}
           />
         )) ?? null
       }
       threadTitle={activeConversation?.title ?? (selectedPeer != null ? `Диалог ${selectedPeer}` : "")}
+      threadNotice={null}
       messagesLoading={msgLoading}
+      messagesError={msgError ? (msgErrorDetail instanceof Error ? msgErrorDetail.message : "Не удалось загрузить сообщения") : null}
+      messagesEmpty={(messages?.length ?? 0) === 0}
       messages={
         messages?.map((m) => (
           <MessageBubble
@@ -256,7 +256,10 @@ export function MessengerLayout({
   selectedId,
   onBack,
   threadTitle,
+  threadNotice,
   messagesLoading,
+  messagesError,
+  messagesEmpty,
   messages,
   draft,
   onDraftChange,
@@ -271,7 +274,10 @@ export function MessengerLayout({
   selectedId: string | number | null;
   onBack: () => void;
   threadTitle: string;
+  threadNotice?: string | null;
   messagesLoading: boolean;
+  messagesError: string | null;
+  messagesEmpty: boolean;
   messages: ReactNode;
   draft: string;
   onDraftChange: (v: string) => void;
@@ -341,11 +347,22 @@ export function MessengerLayout({
                 </Button>
                 <span className="truncate">{threadTitle}</span>
               </div>
-              <ScrollArea className="flex-1 p-4">
+              {threadNotice ? (
+                <p className="px-4 py-2 text-xs text-amber-700 bg-amber-50 border-b border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-900">
+                  {threadNotice}
+                </p>
+              ) : null}
+              <ScrollArea className="flex-1 min-h-0 p-4">
                 {messagesLoading ? (
                   <div className="text-center text-muted-foreground">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                   </div>
+                ) : messagesError ? (
+                  <p className="text-sm text-destructive text-center">{messagesError}</p>
+                ) : messagesEmpty ? (
+                  <p className="text-sm text-muted-foreground text-center">
+                    Сообщений пока нет
+                  </p>
                 ) : (
                   <div className="space-y-3">{messages}</div>
                 )}

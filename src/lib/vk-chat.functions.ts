@@ -9,6 +9,7 @@ import {
 } from "./vk/vk-token";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
+import { chatWriteDb } from "./chat-db";
 import { sendVkMessage, syncAllVkChat, syncVkHistory } from "./vk/vk-sync";
 
 async function userCanChat(
@@ -88,7 +89,7 @@ export const connectVkWithCode = createServerFn({ method: "POST" })
       tokenData.expires_in,
     );
 
-    const sync = await syncAllVkChat(supabase, tokenData.access_token);
+    const sync = await syncAllVkChat(chatWriteDb(supabase), tokenData.access_token);
     return { ok: true as const, vkUserId: tokenData.user_id, sync };
   });
 
@@ -105,7 +106,7 @@ export const syncVkChat = createServerFn({ method: "POST" })
       throw new Error("VK не подключён. Укажите VK_ACCESS_TOKEN или авторизуйтесь через ВКонтакте.");
     }
 
-    return syncAllVkChat(supabase, token);
+    return syncAllVkChat(chatWriteDb(supabase), token);
   });
 
 export const syncVkPeerMessages = createServerFn({ method: "POST" })
@@ -122,7 +123,8 @@ export const syncVkPeerMessages = createServerFn({ method: "POST" })
       throw new Error("VK не подключён");
     }
 
-    const count = await syncVkHistory(supabase, token, data.peerId, 100);
+    const peerId = Number(data.peerId);
+    const count = await syncVkHistory(chatWriteDb(supabase), token, peerId, 100);
     return { count };
   });
 
@@ -143,6 +145,6 @@ export const sendVkChatMessage = createServerFn({ method: "POST" })
       throw new Error("VK не подключён");
     }
 
-    const messageId = await sendVkMessage(supabase, token, data.peerId, text);
+    const messageId = await sendVkMessage(chatWriteDb(supabase), token, Number(data.peerId), text);
     return { messageId };
   });

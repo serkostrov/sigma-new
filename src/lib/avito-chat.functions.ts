@@ -7,6 +7,8 @@ import {
   getAvitoAccessToken,
   resolveAvitoUserId,
 } from "./avito/avito-token";
+import { getAvitoMessengerApiAvailable } from "./avito/avito-messenger-access";
+import { chatWriteDb } from "@/lib/chat-db";
 import {
   sendAvitoMessage,
   syncAllAvitoChat,
@@ -35,15 +37,28 @@ export const getAvitoChatStatus = createServerFn({ method: "GET" })
 
     const configured = avitoCredentialsConfigured();
     if (!configured) {
-      return { connected: false, userId: null as number | null };
+      return {
+        connected: false,
+        userId: null as number | null,
+        messengerApiAvailable: false,
+      };
     }
 
     try {
       const token = await getAvitoAccessToken();
       const avitoUserId = await resolveAvitoUserId(token);
-      return { connected: true, userId: avitoUserId };
+      const cached = getAvitoMessengerApiAvailable();
+      return {
+        connected: true,
+        userId: avitoUserId,
+        messengerApiAvailable: cached !== false,
+      };
     } catch {
-      return { connected: false, userId: null as number | null };
+      return {
+        connected: false,
+        userId: null as number | null,
+        messengerApiAvailable: false,
+      };
     }
   });
 
@@ -61,7 +76,7 @@ export const syncAvitoChat = createServerFn({ method: "POST" })
       );
     }
 
-    return syncAllAvitoChat(supabase);
+    return syncAllAvitoChat(chatWriteDb(supabase));
   });
 
 export const syncAvitoChatMessagesFn = createServerFn({ method: "POST" })
@@ -76,13 +91,16 @@ export const syncAvitoChatMessagesFn = createServerFn({ method: "POST" })
     const token = await getAvitoAccessToken();
     const avitoUserId = await resolveAvitoUserId(token);
     const count = await syncAvitoChatMessages(
-      supabase,
+      chatWriteDb(supabase),
       token,
       avitoUserId,
       data.chatId,
       100,
     );
-    return { count };
+    return {
+      count,
+      messengerApiAvailable: getAvitoMessengerApiAvailable() !== false,
+    };
   });
 
 export const sendAvitoChatMessage = createServerFn({ method: "POST" })
@@ -97,6 +115,6 @@ export const sendAvitoChatMessage = createServerFn({ method: "POST" })
     const text = data.text.trim();
     if (!text) throw new Error("Сообщение пустое");
 
-    const messageId = await sendAvitoMessage(supabase, data.chatId, text);
+    const messageId = await sendAvitoMessage(chatWriteDb(supabase), data.chatId, text);
     return { messageId };
   });

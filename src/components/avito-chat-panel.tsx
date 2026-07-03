@@ -10,7 +10,6 @@ import {
   useAvitoMessages,
   useSendAvitoMessage,
   useSyncAvitoChat,
-  useSyncAvitoChatMessages,
   type AvitoConversation,
 } from "@/lib/avito-chat-api";
 import { MessageBubble, MessengerLayout } from "@/components/vk-chat-panel";
@@ -108,9 +107,13 @@ export function AvitoChatPanel() {
 
   const { data: status } = useAvitoChatStatus();
   const { data: conversations, isLoading: convLoading } = useAvitoConversations();
-  const { data: messages, isLoading: msgLoading } = useAvitoMessages(selectedChat);
+  const {
+    data: messages,
+    isLoading: msgLoading,
+    isError: msgError,
+    error: msgErrorDetail,
+  } = useAvitoMessages(selectedChat, status?.messengerApiAvailable);
   const syncAll = useSyncAvitoChat();
-  const syncChat = useSyncAvitoChatMessages();
   const send = useSendAvitoMessage();
 
   useEffect(() => {
@@ -121,13 +124,11 @@ export function AvitoChatPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.connected]);
 
-  useEffect(() => {
-    if (selectedChat == null) return;
-    syncChat.mutate(selectedChat);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChat]);
-
   const activeConversation = conversations?.find((c) => c.chat_id === selectedChat);
+  const previewOnly = status?.messengerApiAvailable === false;
+  const threadNotice = previewOnly
+    ? "Полная история недоступна без подписки «API мессенджера» на Авито. Показано последнее сообщение из списка чатов."
+    : null;
 
   const handleSend = () => {
     const text = draft.trim();
@@ -164,7 +165,10 @@ export function AvitoChatPanel() {
         )) ?? null
       }
       threadTitle={activeConversation?.title ?? (selectedChat != null ? "Диалог" : "")}
+      threadNotice={threadNotice}
       messagesLoading={msgLoading}
+      messagesError={msgError ? (msgErrorDetail instanceof Error ? msgErrorDetail.message : "Не удалось загрузить сообщения") : null}
+      messagesEmpty={(messages?.length ?? 0) === 0}
       messages={
         messages?.map((m) => (
           <MessageBubble

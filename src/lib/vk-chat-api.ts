@@ -31,6 +31,20 @@ export const VK_CONVERSATIONS_KEY = ["vk", "conversations"] as const;
 export const VK_MESSAGES_KEY = (peerId: number) => ["vk", "messages", peerId] as const;
 export const VK_STATUS_KEY = ["vk", "status"] as const;
 
+function normalizePeerId(peerId: number | string): number {
+  return Number(peerId);
+}
+
+async function fetchVkMessages(peerId: number): Promise<VkChatMessage[]> {
+  const { data, error } = await (supabase as any)
+    .from("vk_messages")
+    .select("*")
+    .eq("peer_id", peerId)
+    .order("vk_date", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as VkChatMessage[];
+}
+
 export function useVkChatStatus() {
   return useQuery({
     queryKey: VK_STATUS_KEY,
@@ -42,29 +56,30 @@ export function useVkConversations() {
   return useQuery({
     queryKey: VK_CONVERSATIONS_KEY,
     queryFn: async (): Promise<VkConversation[]> => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("vk_conversations")
         .select("*")
         .order("last_message_at", { ascending: false, nullsFirst: false });
       if (error) throw error;
-      return (data ?? []) as VkConversation[];
+      return ((data ?? []) as VkConversation[]).map((c) => ({
+        ...c,
+        peer_id: normalizePeerId(c.peer_id),
+      }));
     },
   });
 }
 
 export function useVkMessages(peerId: number | null) {
+  const normalizedPeerId = peerId != null ? normalizePeerId(peerId) : null;
+
   return useQuery({
-    queryKey: peerId != null ? VK_MESSAGES_KEY(peerId) : ["vk", "messages", "none"],
-    enabled: peerId != null,
+    queryKey:
+      normalizedPeerId != null ? VK_MESSAGES_KEY(normalizedPeerId) : ["vk", "messages", "none"],
+    enabled: normalizedPeerId != null,
     queryFn: async (): Promise<VkChatMessage[]> => {
-      if (peerId == null) return [];
-      const { data, error } = await supabase
-        .from("vk_messages")
-        .select("*")
-        .eq("peer_id", peerId)
-        .order("vk_date", { ascending: true });
-      if (error) throw error;
-      return (data ?? []) as VkChatMessage[];
+      if (normalizedPeerId == null) return [];
+      await syncVkPeerMessages({ data: { peerId: normalizedPeerId } });
+      return fetchVkMessages(normalizedPeerId);
     },
   });
 }
@@ -83,9 +98,11 @@ export function useSyncVkChat() {
 export function useSyncVkPeer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (peerId: number) => syncVkPeerMessages({ data: { peerId } }),
+    mutationFn: (peerId: number) =>
+      syncVkPeerMessages({ data: { peerId: normalizePeerId(peerId) } }),
     onSuccess: (_r, peerId) => {
-      qc.invalidateQueries({ queryKey: VK_MESSAGES_KEY(peerId) });
+      const id = normalizePeerId(peerId);
+      qc.invalidateQueries({ queryKey: VK_MESSAGES_KEY(id) });
       qc.invalidateQueries({ queryKey: VK_CONVERSATIONS_KEY });
     },
   });
@@ -95,9 +112,10 @@ export function useSendVkMessage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { peerId: number; text: string }) =>
-      sendVkChatMessage({ data: input }),
+      sendVkChatMessage({ data: { ...input, peerId: normalizePeerId(input.peerId) } }),
     onSuccess: (_r, input) => {
-      qc.invalidateQueries({ queryKey: VK_MESSAGES_KEY(input.peerId) });
+      const id = normalizePeerId(input.peerId);
+      qc.invalidateQueries({ queryKey: VK_MESSAGES_KEY(id) });
       qc.invalidateQueries({ queryKey: VK_CONVERSATIONS_KEY });
     },
   });

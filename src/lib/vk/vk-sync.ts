@@ -22,7 +22,7 @@ export async function syncVkConversations(
   let synced = 0;
 
   for (const item of data.items ?? []) {
-    const peerId = item.conversation.peer.id;
+    const peerId = Number(item.conversation.peer.id);
     const last = item.last_message;
     const chatSettings = item.conversation.chat_settings;
 
@@ -62,15 +62,16 @@ export async function syncVkHistory(
   peerId: number,
   count = 50,
 ): Promise<number> {
+  const normalizedPeerId = Number(peerId);
   const data = await vkApiCall<VkHistoryResponse>(
     "messages.getHistory",
-    { peer_id: peerId, count, extended: 1, fields: "photo_100" },
+    { peer_id: normalizedPeerId, count, extended: 1, fields: "photo_100" },
     accessToken,
   );
 
   const rows = (data.items ?? []).map((m) => ({
     vk_message_id: m.id,
-    peer_id: peerId,
+    peer_id: normalizedPeerId,
     from_id: m.from_id,
     text: m.text ?? "",
     is_outgoing: m.out === 1,
@@ -106,7 +107,11 @@ export async function syncAllVkChat(
 
   let messages = 0;
   for (const row of peers ?? []) {
-    messages += await syncVkHistory(db, accessToken, row.peer_id, 30);
+    try {
+      messages += await syncVkHistory(db, accessToken, Number(row.peer_id), 30);
+    } catch (e) {
+      console.error(`[vk] history sync failed for peer ${row.peer_id}:`, e);
+    }
   }
 
   return { conversations, messages };

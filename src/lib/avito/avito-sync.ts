@@ -3,10 +3,16 @@ import {
   avitoApiCall,
   chatPhoto,
   chatTitle,
+  isAvitoMessengerSubscriptionError,
   messageText,
   type AvitoChatsResponse,
   type AvitoMessagesResponse,
 } from "./avito-client";
+import {
+  getAvitoMessengerApiAvailable,
+  markAvitoMessengerApiAvailable,
+  markAvitoMessengerApiUnavailable,
+} from "./avito-messenger-access";
 import { getAvitoAccessToken, resolveAvitoUserId } from "./avito-token";
 
 async function avitoContext() {
@@ -61,36 +67,55 @@ export async function syncAvitoChatMessages(
   chatId: string,
   limit = 100,
 ): Promise<number> {
-  const data = await avitoApiCall<AvitoMessagesResponse>(
-    `/messenger/v3/accounts/${userId}/chats/${chatId}/messages/?limit=${limit}&offset=0`,
-    accessToken,
-  );
+  if (getAvitoMessengerApiAvailable() === false) {
+    return 0;
+  }
 
-  const rows = (data.messages ?? []).map((m) => ({
-    chat_id: chatId,
-    message_id: m.id,
-    author_id: m.author_id ?? null,
-    text: messageText(m),
-    is_outgoing: m.direction === "out",
-    avito_created: m.created ?? 0,
-  }));
+  try {
+    const data = await avitoApiCall<AvitoMessagesResponse>(
+      `/messenger/v3/accounts/${userId}/chats/${chatId}/messages/?limit=${limit}&offset=0`,
+      accessToken,
+    );
 
-  if (rows.length === 0) return 0;
+    markAvitoMessengerApiAvailable();
 
-  const { error } = await db
-    .from("avito_messages")
-    .upsert(rows, { onConflict: "chat_id,message_id", ignoreDuplicates: true });
+    const rows = (data.messages ?? []).map((m) => ({
+      chat_id: chatId,
+      message_id: m.id,
+      author_id: m.author_id ?? null,
+      text: messageText(m),
+      is_outgoing: m.direction === "out",
+      avito_created: m.created ?? 0,
+    }));
 
-  if (error) throw error;
-  return rows.length;
+    if (rows.length === 0) return 0;
+
+    const { error } = await db
+      .from("avito_messages")
+      .upsert(rows, { onConflict: "chat_id,message_id", ignoreDuplicates: true });
+
+    if (error) throw error;
+    return rows.length;
+  } catch (error) {
+    if (isAvitoMessengerSubscriptionError(error)) {
+      markAvitoMessengerApiUnavailable();
+      return 0;
+    }
+    throw error;
+  }
 }
 
 export async function syncAllAvitoChat(db: ChatDb): Promise<{
   conversations: number;
   messages: number;
+  messengerApiAvailable: boolean;
 }> {
   const { accessToken, userId } = await avitoContext();
   const conversations = await syncAvitoConversations(db, accessToken, userId);
+
+  if (getAvitoMessengerApiAvailable() === false) {
+    return { conversations, messages: 0, messengerApiAvailable: false };
+  }
 
   const { data: chats, error } = await db
     .from("avito_conversations")
@@ -102,10 +127,18 @@ export async function syncAllAvitoChat(db: ChatDb): Promise<{
 
   let messages = 0;
   for (const row of chats ?? []) {
-    messages += await syncAvitoChatMessages(db, accessToken, userId, row.chat_id, 50);
+    const count = await syncAvitoChatMessages(db, accessToken, userId, row.chat_id, 50);
+    messages += count;
+    if (getAvitoMessengerApiAvailable() === false) {
+      break;
+    }
   }
 
-  return { conversations, messages };
+  return {
+    conversations,
+    messages,
+    messengerApiAvailable: getAvitoMessengerApiAvailable() !== false,
+  };
 }
 
 export async function sendAvitoMessage(
