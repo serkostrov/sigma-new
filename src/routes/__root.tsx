@@ -16,6 +16,7 @@ import { PermissionProvider } from "@/lib/permission-context";
 import { usePermissions } from "@/lib/permissions";
 import { useEffect } from "react";
 import { useRouterState, useNavigate } from "@tanstack/react-router";
+import { getRuntimeSupabaseConfigForShell } from "@/lib/supabase-env";
 
 function NotFoundComponent() {
   return (
@@ -105,10 +106,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  const supabaseConfig = getRuntimeSupabaseConfigForShell();
+  const configScript = supabaseConfig
+    ? `window.__SUPABASE_CONFIG__=${JSON.stringify(supabaseConfig)}`
+    : null;
+
   return (
     <html lang="en">
       <head>
         <HeadContent />
+        {configScript ? (
+          <script dangerouslySetInnerHTML={{ __html: configScript }} />
+        ) : null}
       </head>
       <body>
         {children}
