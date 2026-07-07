@@ -10,7 +10,12 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { chatWriteDb } from "./chat-db";
-import { sendVkMessage, syncAllVkChat, syncVkHistory } from "./vk/vk-sync";
+import {
+  markVkPeerRead,
+  sendVkMessage,
+  syncAllVkChat,
+  syncVkHistory,
+} from "./vk/vk-sync";
 
 async function userCanChat(
   supabase: SupabaseClient<Database>,
@@ -145,6 +150,27 @@ export const sendVkChatMessage = createServerFn({ method: "POST" })
       throw new Error("VK не подключён");
     }
 
-    const messageId = await sendVkMessage(chatWriteDb(supabase), token, Number(data.peerId), text);
+    const messageId = await sendVkMessage(
+      chatWriteDb(supabase),
+      token,
+      Number(data.peerId),
+      text,
+    );
     return { messageId };
+  });
+
+export const markVkChatReadFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((data: { peerId: number }) => data)
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    if (!(await userCanChat(supabase, userId))) {
+      throw new Error("Нет доступа к чату");
+    }
+
+    const token = await resolveVkAccessToken(supabase, userId);
+    if (!token) return { ok: false as const };
+
+    await markVkPeerRead(chatWriteDb(supabase), token, Number(data.peerId));
+    return { ok: true as const };
   });

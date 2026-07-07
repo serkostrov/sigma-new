@@ -10,10 +10,13 @@ import {
 import { getAvitoMessengerApiAvailable } from "./avito/avito-messenger-access";
 import { chatWriteDb } from "@/lib/chat-db";
 import {
+  sendAvitoAttachment,
   sendAvitoMessage,
   syncAllAvitoChat,
   syncAvitoChatMessages,
+  markAvitoChatRead,
 } from "./avito/avito-sync";
+import { AVITO_ATTACHMENT_MAX_BYTES } from "./avito/avito-media";
 
 async function userCanChat(
   supabase: SupabaseClient<Database>,
@@ -117,4 +120,54 @@ export const sendAvitoChatMessage = createServerFn({ method: "POST" })
 
     const messageId = await sendAvitoMessage(chatWriteDb(supabase), data.chatId, text);
     return { messageId };
+  });
+
+export const sendAvitoChatAttachment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (data: {
+      chatId: string;
+      fileName: string;
+      mimeType: string;
+      fileDataBase64: string;
+    }) => data,
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    if (!(await userCanChat(supabase, userId))) {
+      throw new Error("Нет доступа к чату");
+    }
+
+    const fileName = data.fileName.trim();
+    if (!fileName) throw new Error("Имя файла не указано");
+
+    const bytes = Uint8Array.from(Buffer.from(data.fileDataBase64, "base64"));
+    if (bytes.byteLength > AVITO_ATTACHMENT_MAX_BYTES) {
+      throw new Error("Файл больше 50 МБ");
+    }
+
+    return sendAvitoAttachment(
+      supabase,
+      data.chatId,
+      fileName,
+      data.mimeType || "application/octet-stream",
+      bytes,
+    );
+  });
+
+export const markAvitoChatReadFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((data: { chatId: string }) => data)
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    if (!(await userCanChat(supabase, userId))) {
+      throw new Error("Нет доступа к чату");
+    }
+
+    if (!avitoCredentialsConfigured()) {
+      return { ok: false as const };
+    }
+
+    await markAvitoChatRead(supabase, data.chatId);
+    return { ok: true as const };
   });

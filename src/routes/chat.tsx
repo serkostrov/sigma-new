@@ -15,5 +15,5 @@ export const Route = createFileRoute("/chat")({
 
 function ChatRoute() {
   const { code, tab } = Route.useSearch();
-  return <ChatPage oauthCode={code} initialTab={tab ?? "vk"} />;
+  return <ChatPage oauthCode={code} initialTab={tab ?? "avito"} />;
 }

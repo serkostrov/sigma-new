@@ -4,10 +4,12 @@ import {
   connectVkWithCode,
   getVkAuthUrl,
   getVkChatStatus,
+  markVkChatReadFn,
   sendVkChatMessage,
   syncVkChat,
   syncVkPeerMessages,
 } from "./vk-chat.functions";
+import { CHAT_UNREAD_KEY } from "./chat-unread-api";
 
 export type VkConversation = {
   peer_id: number;
@@ -91,6 +93,7 @@ export function useSyncVkChat() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: VK_CONVERSATIONS_KEY });
       qc.invalidateQueries({ queryKey: ["vk", "messages"] });
+      qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
     },
   });
 }
@@ -104,6 +107,7 @@ export function useSyncVkPeer() {
       const id = normalizePeerId(peerId);
       qc.invalidateQueries({ queryKey: VK_MESSAGES_KEY(id) });
       qc.invalidateQueries({ queryKey: VK_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
     },
   });
 }
@@ -134,6 +138,22 @@ export function useConnectVk() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: VK_STATUS_KEY });
       qc.invalidateQueries({ queryKey: VK_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
+    },
+  });
+}
+
+export function useMarkVkChatRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (peerId: number) => markVkChatReadFn({ data: { peerId: normalizePeerId(peerId) } }),
+    onSuccess: (_r, peerId) => {
+      const id = normalizePeerId(peerId);
+      qc.invalidateQueries({ queryKey: VK_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
+      qc.setQueryData<VkConversation[]>(VK_CONVERSATIONS_KEY, (prev) =>
+        prev?.map((c) => (normalizePeerId(c.peer_id) === id ? { ...c, unread_count: 0 } : c)),
+      );
     },
   });
 }

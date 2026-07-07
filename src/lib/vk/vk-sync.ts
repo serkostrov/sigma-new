@@ -123,17 +123,18 @@ export async function sendVkMessage(
   peerId: number,
   text: string,
 ): Promise<number> {
+  const normalizedPeerId = Number(peerId);
   const randomId = Math.floor(Math.random() * 2_000_000_000);
   const messageId = await vkApiCall<number>(
     "messages.send",
-    { peer_id: peerId, message: text, random_id: randomId },
+    { peer_id: normalizedPeerId, message: text, random_id: randomId },
     accessToken,
   );
 
   await db.from("vk_messages").upsert(
     {
       vk_message_id: messageId,
-      peer_id: peerId,
+      peer_id: normalizedPeerId,
       from_id: 0,
       text,
       is_outgoing: true,
@@ -149,7 +150,17 @@ export async function sendVkMessage(
       last_message_at: new Date().toISOString(),
       synced_at: new Date().toISOString(),
     })
-    .eq("peer_id", peerId);
+    .eq("peer_id", normalizedPeerId);
 
   return messageId;
+}
+
+export async function markVkPeerRead(
+  db: ChatDb,
+  accessToken: string,
+  peerId: number,
+): Promise<void> {
+  const normalizedPeerId = Number(peerId);
+  await vkApiCall("messages.markAsRead", { peer_id: normalizedPeerId }, accessToken);
+  await db.from("vk_conversations").update({ unread_count: 0 }).eq("peer_id", normalizedPeerId);
 }

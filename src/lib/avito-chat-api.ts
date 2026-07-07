@@ -2,10 +2,28 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getAvitoChatStatus,
+  markAvitoChatReadFn,
+  sendAvitoChatAttachment,
   sendAvitoChatMessage,
   syncAvitoChat,
   syncAvitoChatMessagesFn,
 } from "./avito-chat.functions";
+import { CHAT_UNREAD_KEY } from "./chat-unread-api";
+import { sortAvitoMessages } from "./avito/avito-client";
+import {
+  AVITO_ATTACHMENT_ACCEPT,
+  AVITO_ATTACHMENT_MAX_BYTES,
+  AVITO_IMAGE_MAX_BYTES,
+  avitoAttachmentKind,
+  avitoUnsupportedFileMessage,
+  isAvitoNativeImage,
+} from "./avito/avito-media";
+
+export {
+  AVITO_ATTACHMENT_ACCEPT,
+  AVITO_ATTACHMENT_MAX_BYTES,
+  AVITO_IMAGE_MAX_BYTES,
+};
 
 export type AvitoConversation = {
   chat_id: string;
@@ -22,8 +40,13 @@ export type AvitoChatMessage = {
   message_id: string;
   author_id: number | null;
   text: string;
+  message_type: string;
+  image_url: string | null;
+  link_url: string | null;
+  link_title: string | null;
   is_outgoing: boolean;
   avito_created: number;
+  message_seq: number;
 };
 
 export const AVITO_CONVERSATIONS_KEY = ["avito", "conversations"] as const;
@@ -59,8 +82,13 @@ async function fetchAvitoPreview(chatId: string): Promise<AvitoChatMessage[]> {
       message_id: `preview-${chatId}`,
       author_id: null,
       text: data.last_message_text as string,
+      message_type: "text",
+      image_url: null,
+      link_url: null,
+      link_title: null,
       is_outgoing: false,
       avito_created: avitoCreated,
+      message_seq: 0,
     },
   ];
 }
@@ -98,16 +126,15 @@ export function useAvitoMessages(
     enabled: chatId != null,
     queryFn: async (): Promise<AvitoChatMessage[]> => {
       if (chatId == null) return [];
-
       if (messengerApiAvailable !== false) {
         const sync = await syncAvitoChatMessagesFn({ data: { chatId } });
         if (sync.messengerApiAvailable) {
           const stored = await fetchAvitoMessages(chatId);
-          if (stored.length > 0) return stored;
+          if (stored.length > 0) return sortAvitoMessages(stored);
         }
       }
 
-      return fetchAvitoPreview(chatId);
+      return sortAvitoMessages(await fetchAvitoPreview(chatId));
     },
   });
 }
@@ -124,6 +151,7 @@ export function useSyncAvitoChat() {
           ? { ...prev, messengerApiAvailable: result.messengerApiAvailable }
           : prev,
       );
+      qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
     },
   });
 }
@@ -135,6 +163,7 @@ export function useSyncAvitoChatMessages() {
     onSuccess: (_r, chatId) => {
       qc.invalidateQueries({ queryKey: AVITO_MESSAGES_KEY(chatId) });
       qc.invalidateQueries({ queryKey: AVITO_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
     },
   });
 }
@@ -147,6 +176,74 @@ export function useSendAvitoMessage() {
     onSuccess: (_r, input) => {
       qc.invalidateQueries({ queryKey: AVITO_MESSAGES_KEY(input.chatId) });
       qc.invalidateQueries({ queryKey: AVITO_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
+    },
+  });
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+export function useSendAvitoAttachment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { chatId: string; file: File }) => {
+      const { file, chatId } = input;
+      if (file.size > AVITO_ATTACHMENT_MAX_BYTES) {
+        throw new Error(`Файл «${file.name}» больше 50 МБ`);
+      }
+
+      const mimeType = file.type || "application/octet-stream";
+      const kind = avitoAttachmentKind(mimeType);
+      if (kind === "image" && file.size > AVITO_IMAGE_MAX_BYTES) {
+        throw new Error(`Изображение «${file.name}» больше 24 МБ (лимит Авито)`);
+      }
+
+      const fileDataBase64 = await fileToBase64(file);
+      return sendAvitoChatAttachment({
+        data: {
+          chatId,
+          fileName: file.name,
+          mimeType,
+          fileDataBase64,
+        },
+      });
+    },
+    onSuccess: (_r, input) => {
+      qc.invalidateQueries({ queryKey: AVITO_MESSAGES_KEY(input.chatId) });
+      qc.invalidateQueries({ queryKey: AVITO_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
+    },
+  });
+}
+
+export function avitoAttachmentHint(file: File): string | null {
+  const mimeType = file.type || "application/octet-stream";
+  const kind = avitoAttachmentKind(mimeType);
+  if (kind === "image" && isAvitoNativeImage(mimeType) && file.size <= AVITO_IMAGE_MAX_BYTES) {
+    return null;
+  }
+  return avitoUnsupportedFileMessage(kind);
+}
+
+export function useMarkAvitoChatRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chatId: string) => markAvitoChatReadFn({ data: { chatId } }),
+    onSuccess: (_r, chatId) => {
+      qc.invalidateQueries({ queryKey: AVITO_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
+      qc.setQueryData<AvitoConversation[]>(AVITO_CONVERSATIONS_KEY, (prev) =>
+        prev?.map((c) => (c.chat_id === chatId ? { ...c, unread_count: 0 } : c)),
+      );
     },
   });
 }

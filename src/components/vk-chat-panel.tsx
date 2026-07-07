@@ -1,17 +1,19 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
-import { Loader2, MessageCircle, RefreshCw, Send } from "lucide-react";
+import { Loader2, MessageCircle, Paperclip, Send } from "lucide-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { displayMessageText, isSystemLikeMessage } from "@/lib/avito/avito-client";
+import { MessengerConversationItem } from "@/components/messenger-conversation-item";
 import {
   useConnectVk,
+  useMarkVkChatRead,
   useSendVkMessage,
-  useSyncVkChat,
+  useSyncVkPeer,
   useVkAuthUrl,
   useVkChatStatus,
   useVkConversations,
@@ -23,50 +25,13 @@ function formatMessageTime(unixSeconds: number): string {
   return format(new Date(unixSeconds * 1000), "dd MMM, HH:mm", { locale: ru });
 }
 
-function ConversationItem({
-  item,
-  active,
-  onClick,
-}: {
-  item: VkConversation;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const initials = item.title
+function conversationInitials(title: string): string {
+  return title
     .split(" ")
     .map((w) => w[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "w-full flex items-start gap-3 px-3 py-3 text-left rounded-lg transition-colors",
-        active ? "bg-primary/10" : "hover:bg-muted/60",
-      )}
-    >
-      <Avatar className="h-10 w-10">
-        {item.photo_url ? <AvatarImage src={item.photo_url} alt={item.title} /> : null}
-        <AvatarFallback>{initials || "?"}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-medium text-sm truncate">{item.title}</span>
-          {item.unread_count > 0 ? (
-            <span className="shrink-0 text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
-              {item.unread_count}
-            </span>
-          ) : null}
-        </div>
-        <p className="text-xs text-muted-foreground truncate mt-0.5">
-          {item.last_message_text || "Нет сообщений"}
-        </p>
-      </div>
-    </button>
-  );
 }
 
 function VkConnectPanel() {
@@ -135,8 +100,9 @@ export function VkChatPanel({ oauthCode }: { oauthCode?: string }) {
     isError: msgError,
     error: msgErrorDetail,
   } = useVkMessages(selectedPeer);
-  const syncAll = useSyncVkChat();
+  const syncPeer = useSyncVkPeer();
   const send = useSendVkMessage();
+  const markRead = useMarkVkChatRead();
   const connect = useConnectVk();
 
   useEffect(() => {
@@ -145,19 +111,17 @@ export function VkChatPanel({ oauthCode }: { oauthCode?: string }) {
     connect.mutate(oauthCode, {
       onSuccess: () => {
         toast.success("ВКонтакте подключён");
-        syncAll.mutate();
       },
       onError: (e) => toast.error(e instanceof Error ? e.message : "Ошибка подключения VK"),
     });
-  }, [oauthCode, connect, syncAll]);
+  }, [oauthCode, connect]);
 
   useEffect(() => {
-    if (!status?.connected) return;
-    syncAll.mutate();
-    const id = window.setInterval(() => syncAll.mutate(), 20_000);
-    return () => window.clearInterval(id);
+    if (selectedPeer == null) return;
+    syncPeer.mutate(selectedPeer);
+    markRead.mutate(selectedPeer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status?.connected]);
+  }, [selectedPeer]);
 
   const activeConversation = conversations?.find((c) => c.peer_id === selectedPeer);
 
@@ -183,13 +147,15 @@ export function VkChatPanel({ oauthCode }: { oauthCode?: string }) {
       conversationsEmpty={(conversations?.length ?? 0) === 0}
       selectedId={selectedPeer}
       onBack={() => setSelectedPeer(null)}
-      onRefresh={() => syncAll.mutate()}
-      refreshPending={syncAll.isPending}
       conversationList={
         conversations?.map((c) => (
-          <ConversationItem
+          <MessengerConversationItem
             key={c.peer_id}
-            item={c}
+            title={c.title}
+            preview={c.last_message_text}
+            photoUrl={c.photo_url}
+            initials={conversationInitials(c.title) || "?"}
+            unreadCount={c.unread_count}
             active={selectedPeer === c.peer_id}
             onClick={() => setSelectedPeer(Number(c.peer_id))}
           />
@@ -198,8 +164,15 @@ export function VkChatPanel({ oauthCode }: { oauthCode?: string }) {
       threadTitle={activeConversation?.title ?? (selectedPeer != null ? `Диалог ${selectedPeer}` : "")}
       threadNotice={null}
       messagesLoading={msgLoading}
-      messagesError={msgError ? (msgErrorDetail instanceof Error ? msgErrorDetail.message : "Не удалось загрузить сообщения") : null}
+      messagesError={
+        msgError
+          ? msgErrorDetail instanceof Error
+            ? msgErrorDetail.message
+            : "Не удалось загрузить сообщения"
+          : null
+      }
       messagesEmpty={(messages?.length ?? 0) === 0}
+      messagesScrollDep={selectedPeer != null ? `${selectedPeer}-${messages?.length ?? 0}` : null}
       messages={
         messages?.map((m) => (
           <MessageBubble
@@ -222,11 +195,38 @@ export function MessageBubble({
   text,
   isOutgoing,
   time,
+  imageUrl,
+  linkUrl,
+  linkTitle,
+  messageType,
 }: {
   text: string;
   isOutgoing: boolean;
   time: string;
+  imageUrl?: string | null;
+  linkUrl?: string | null;
+  linkTitle?: string | null;
+  messageType?: string | null;
 }) {
+  if (isSystemLikeMessage(text, messageType)) {
+    const displayText = displayMessageText(text) || "Системное сообщение";
+    return (
+      <div className="flex justify-center px-2">
+        <div className="max-w-[92%] rounded-lg border border-dashed border-border bg-muted/40 px-4 py-2.5 text-center">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">
+            Системное сообщение
+          </p>
+          <p className="text-sm text-foreground/85 whitespace-pre-wrap break-words">{displayText}</p>
+          <p className="text-[10px] mt-1.5 text-muted-foreground">{time}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const hasImage = Boolean(imageUrl);
+  const hasLink = Boolean(linkUrl);
+  const hasText = Boolean(text.trim());
+
   return (
     <div className={cn("flex", isOutgoing ? "justify-end" : "justify-start")}>
       <div
@@ -235,7 +235,32 @@ export function MessageBubble({
           isOutgoing ? "bg-primary text-primary-foreground" : "bg-muted",
         )}
       >
-        <p className="whitespace-pre-wrap break-words">{text || "—"}</p>
+        {hasImage ? (
+          <a href={imageUrl!} target="_blank" rel="noopener noreferrer" className="block">
+            <img
+              src={imageUrl!}
+              alt=""
+              className="max-w-full max-h-64 rounded-lg object-cover"
+              loading="lazy"
+            />
+          </a>
+        ) : null}
+        {hasText ? <p className="whitespace-pre-wrap break-words">{text}</p> : null}
+        {hasLink ? (
+          <a
+            href={linkUrl!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "block break-all underline underline-offset-2",
+              hasText || hasImage ? "mt-1" : "",
+              isOutgoing ? "text-primary-foreground/90" : "text-primary",
+            )}
+          >
+            {linkTitle || linkUrl}
+          </a>
+        ) : null}
+        {!hasText && !hasImage && !hasLink ? <p>—</p> : null}
         <p
           className={cn(
             "text-[10px] mt-1 opacity-70",
@@ -247,6 +272,18 @@ export function MessageBubble({
       </div>
     </div>
   );
+}
+
+const SIDEBAR_WIDTH_STORAGE_KEY = "messenger-sidebar-width";
+const SIDEBAR_DEFAULT_WIDTH = 320;
+const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MAX_WIDTH = 560;
+
+function readStoredSidebarWidth(): number {
+  if (typeof window === "undefined") return SIDEBAR_DEFAULT_WIDTH;
+  const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+  if (!Number.isFinite(saved)) return SIDEBAR_DEFAULT_WIDTH;
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, saved));
 }
 
 export function MessengerLayout({
@@ -261,12 +298,14 @@ export function MessengerLayout({
   messagesError,
   messagesEmpty,
   messages,
+  messagesScrollDep,
   draft,
   onDraftChange,
   onSend,
   sendPending,
-  onRefresh,
-  refreshPending,
+  enableAttach,
+  onAttachFiles,
+  attachAccept,
 }: {
   conversationsLoading: boolean;
   conversationsEmpty: boolean;
@@ -279,57 +318,126 @@ export function MessengerLayout({
   messagesError: string | null;
   messagesEmpty: boolean;
   messages: ReactNode;
+  /** Changes when the message list changes — triggers scroll to the latest message. */
+  messagesScrollDep?: string | number | null;
   draft: string;
   onDraftChange: (v: string) => void;
   onSend: () => void;
   sendPending: boolean;
-  onRefresh: () => void;
-  refreshPending: boolean;
+  enableAttach?: boolean;
+  onAttachFiles?: (files: File[]) => void;
+  attachAccept?: string;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(readStoredSidebarWidth);
+  const sidebarWidthRef = useRef(sidebarWidth);
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  sidebarWidthRef.current = sidebarWidth;
+
+  useEffect(() => {
+    if (selectedId == null || messagesLoading) return;
+
+    const scrollToBottom = () => {
+      messagesEndRef.current?.scrollIntoView({ block: "end" });
+    };
+
+    scrollToBottom();
+    const frame = requestAnimationFrame(scrollToBottom);
+    const timer = window.setTimeout(scrollToBottom, 50);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [selectedId, messagesLoading, messagesScrollDep]);
+
+  const clampSidebarWidth = (width: number) => {
+    const containerWidth = containerRef.current?.offsetWidth ?? 1200;
+    const max = Math.min(SIDEBAR_MAX_WIDTH, Math.floor(containerWidth * 0.6));
+    return Math.min(max, Math.max(SIDEBAR_MIN_WIDTH, width));
+  };
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      if (!resizeRef.current) return;
+      const delta = event.clientX - resizeRef.current.startX;
+      setSidebarWidth(clampSidebarWidth(resizeRef.current.startWidth + delta));
+    };
+
+    const onPointerUp = () => {
+      if (!resizeRef.current) return;
+      resizeRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidthRef.current));
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, []);
+
+  const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    resizeRef.current = { startX: event.clientX, startWidth: sidebarWidth };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={onRefresh} disabled={refreshPending}>
-          {refreshPending ? (
-            <Loader2 className="w-4 h-4 animate-spin mr-1" />
+    <div
+      ref={containerRef}
+      className="bg-card border border-border rounded-xl overflow-hidden h-[calc(100vh-14rem)] flex flex-col md:flex-row"
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+    >
+      <aside
+        className={cn(
+          "border-r border-border flex flex-col shrink-0 min-w-0 w-full md:w-[var(--sidebar-width)]",
+          selectedId != null ? "hidden md:flex" : "flex",
+        )}
+      >
+        <div className="px-3 py-2 border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
+          Диалоги
+        </div>
+        <ScrollArea className="flex-1">
+          {conversationsLoading ? (
+            <div className="p-6 text-center text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+            </div>
+          ) : conversationsEmpty ? (
+            <p className="p-6 text-sm text-muted-foreground text-center">
+              Диалогов пока нет. Нажмите «Обновить».
+            </p>
           ) : (
-            <RefreshCw className="w-4 h-4 mr-1" />
+            <div className="p-2 space-y-1">{conversationList}</div>
           )}
-          Обновить
-        </Button>
-      </div>
+        </ScrollArea>
+      </aside>
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden h-[calc(100vh-14rem)] flex flex-col md:flex-row">
-        <aside
-          className={cn(
-            "w-full md:w-80 border-r border-border flex flex-col shrink-0",
-            selectedId != null ? "hidden md:flex" : "flex",
-          )}
-        >
-          <div className="p-3 border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
-            Диалоги
-          </div>
-          <ScrollArea className="flex-1">
-            {conversationsLoading ? (
-              <div className="p-6 text-center text-muted-foreground">
-                <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-              </div>
-            ) : conversationsEmpty ? (
-              <p className="p-6 text-sm text-muted-foreground text-center">
-                Диалогов пока нет. Нажмите «Обновить».
-              </p>
-            ) : (
-              <div className="p-2 space-y-1">{conversationList}</div>
-            )}
-          </ScrollArea>
-        </aside>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Изменить ширину списка диалогов"
+        onPointerDown={handleResizeStart}
+        className={cn(
+          "hidden md:block w-1.5 shrink-0 cursor-col-resize touch-none",
+          "bg-border/50 hover:bg-primary/25 active:bg-primary/40 transition-colors",
+        )}
+      />
 
-        <section
-          className={cn(
-            "flex-1 flex flex-col min-w-0",
-            selectedId == null ? "hidden md:flex" : "flex",
-          )}
-        >
+      <section
+        className={cn(
+          "flex-1 flex flex-col min-w-0",
+          selectedId == null ? "hidden md:flex" : "flex",
+        )}
+      >
           {selectedId == null ? (
             <div className="flex-1 grid place-items-center text-muted-foreground text-sm">
               Выберите диалог слева
@@ -364,10 +472,39 @@ export function MessengerLayout({
                     Сообщений пока нет
                   </p>
                 ) : (
-                  <div className="space-y-3">{messages}</div>
+                  <div className="space-y-3">
+                    {messages}
+                    <div ref={messagesEndRef} aria-hidden />
+                  </div>
                 )}
               </ScrollArea>
               <div className="p-3 border-t border-border flex gap-2">
+                {enableAttach ? (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      multiple
+                      accept={attachAccept}
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files ?? []);
+                        if (files.length > 0) onAttachFiles?.(files);
+                        e.target.value = "";
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={sendPending}
+                      onClick={() => fileInputRef.current?.click()}
+                      aria-label="Прикрепить файл"
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </Button>
+                  </>
+                ) : null}
                 <Input
                   placeholder="Написать сообщение…"
                   value={draft}
@@ -391,7 +528,6 @@ export function MessengerLayout({
             </>
           )}
         </section>
-      </div>
     </div>
   );
 }

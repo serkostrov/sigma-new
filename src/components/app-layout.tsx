@@ -19,7 +19,9 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useChatUnreadCounts } from "@/lib/chat-unread-api";
 import { usePermissions } from "@/lib/permissions";
+import { ChatUnreadBadge } from "@/components/chat-unread-badge";
 import { cn } from "@/lib/utils";
 import logoWhite from "@/assets/logo-white.svg";
 
@@ -41,9 +43,11 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, primaryRoleLabel, signOut } = useAuth();
-  const { nav } = usePermissions();
+  const { nav, has } = usePermissions();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [open, setOpen] = useState(false);
+  const showChatUnread = has("chat.view");
+  const { data: unread } = useChatUnreadCounts(showChatUnread);
 
   const isActive = (to: string, exact?: boolean) =>
     exact ? path === to : path === to || path.startsWith(to + "/");
@@ -77,7 +81,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 )}
               >
                 <Icon className="w-4 h-4" />
-                {item.label}
+                <span className="flex-1 truncate">{item.label}</span>
+                {item.to === "/chat" ? <ChatUnreadBadge count={unread?.total ?? 0} size="xs" /> : null}
               </Link>
             );
           })}

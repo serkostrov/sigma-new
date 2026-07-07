@@ -2,70 +2,33 @@ import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { Loader2, ShoppingBag } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { cn } from "@/lib/utils";
+import { MessengerConversationItem } from "@/components/messenger-conversation-item";
+import { MessageBubble, MessengerLayout } from "@/components/vk-chat-panel";
 import {
+  AVITO_ATTACHMENT_ACCEPT,
+  avitoAttachmentHint,
   useAvitoChatStatus,
   useAvitoConversations,
   useAvitoMessages,
+  useMarkAvitoChatRead,
+  useSendAvitoAttachment,
   useSendAvitoMessage,
-  useSyncAvitoChat,
+  useSyncAvitoChatMessages,
   type AvitoConversation,
 } from "@/lib/avito-chat-api";
-import { MessageBubble, MessengerLayout } from "@/components/vk-chat-panel";
 import { toast } from "sonner";
 
 function formatMessageTime(unixSeconds: number): string {
   return format(new Date(unixSeconds * 1000), "dd MMM, HH:mm", { locale: ru });
 }
 
-function AvitoConversationItem({
-  item,
-  active,
-  onClick,
-}: {
-  item: AvitoConversation;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const initials = item.title
+function conversationInitials(title: string): string {
+  return title
     .split(" ")
     .map((w) => w[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "w-full flex items-start gap-3 px-3 py-3 text-left rounded-lg transition-colors",
-        active ? "bg-primary/10" : "hover:bg-muted/60",
-      )}
-    >
-      <Avatar className="h-10 w-10">
-        {item.photo_url ? <AvatarImage src={item.photo_url} alt={item.title} /> : null}
-        <AvatarFallback>{initials || "А"}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-medium text-sm truncate">{item.title}</span>
-          {item.unread_count > 0 ? (
-            <span className="shrink-0 text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
-              {item.unread_count}
-            </span>
-          ) : null}
-        </div>
-        {item.item_title ? (
-          <p className="text-[11px] text-muted-foreground truncate">{item.item_title}</p>
-        ) : null}
-        <p className="text-xs text-muted-foreground truncate mt-0.5">
-          {item.last_message_text || "Нет сообщений"}
-        </p>
-      </div>
-    </button>
-  );
 }
 
 function AvitoConnectPanel() {
@@ -113,16 +76,17 @@ export function AvitoChatPanel() {
     isError: msgError,
     error: msgErrorDetail,
   } = useAvitoMessages(selectedChat, status?.messengerApiAvailable);
-  const syncAll = useSyncAvitoChat();
+  const syncChat = useSyncAvitoChatMessages();
   const send = useSendAvitoMessage();
+  const sendAttachment = useSendAvitoAttachment();
+  const markRead = useMarkAvitoChatRead();
 
   useEffect(() => {
-    if (!status?.connected) return;
-    syncAll.mutate();
-    const id = window.setInterval(() => syncAll.mutate(), 20_000);
-    return () => window.clearInterval(id);
+    if (selectedChat == null) return;
+    syncChat.mutate(selectedChat);
+    markRead.mutate(selectedChat);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status?.connected]);
+  }, [selectedChat]);
 
   const activeConversation = conversations?.find((c) => c.chat_id === selectedChat);
   const previewOnly = status?.messengerApiAvailable === false;
@@ -142,6 +106,28 @@ export function AvitoChatPanel() {
     );
   };
 
+  const handleAttachFiles = async (files: File[]) => {
+    if (selectedChat == null || files.length === 0) return;
+
+    for (const file of files) {
+      const hint = avitoAttachmentHint(file);
+      if (hint) toast.info(hint);
+
+      try {
+        const result = await sendAttachment.mutateAsync({ chatId: selectedChat, file });
+        if (result.delivery === "image") {
+          toast.success(`Фото «${file.name}» отправлено`);
+        } else {
+          toast.success(`Файл «${file.name}» отправлен ссылкой`);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : `Не удалось отправить «${file.name}»`);
+      }
+    }
+  };
+
+  const sendPending = send.isPending || sendAttachment.isPending;
+
   if (!status?.connected) {
     return <AvitoConnectPanel />;
   }
@@ -152,13 +138,16 @@ export function AvitoChatPanel() {
       conversationsEmpty={(conversations?.length ?? 0) === 0}
       selectedId={selectedChat}
       onBack={() => setSelectedChat(null)}
-      onRefresh={() => syncAll.mutate()}
-      refreshPending={syncAll.isPending}
       conversationList={
-        conversations?.map((c) => (
-          <AvitoConversationItem
+        conversations?.map((c: AvitoConversation) => (
+          <MessengerConversationItem
             key={c.chat_id}
-            item={c}
+            title={c.title}
+            subtitle={c.item_title}
+            preview={c.last_message_text}
+            photoUrl={c.photo_url}
+            initials={conversationInitials(c.title) || "А"}
+            unreadCount={c.unread_count}
             active={selectedChat === c.chat_id}
             onClick={() => setSelectedChat(c.chat_id)}
           />
@@ -167,13 +156,24 @@ export function AvitoChatPanel() {
       threadTitle={activeConversation?.title ?? (selectedChat != null ? "Диалог" : "")}
       threadNotice={threadNotice}
       messagesLoading={msgLoading}
-      messagesError={msgError ? (msgErrorDetail instanceof Error ? msgErrorDetail.message : "Не удалось загрузить сообщения") : null}
+      messagesError={
+        msgError
+          ? msgErrorDetail instanceof Error
+            ? msgErrorDetail.message
+            : "Не удалось загрузить сообщения"
+          : null
+      }
       messagesEmpty={(messages?.length ?? 0) === 0}
+      messagesScrollDep={selectedChat != null ? `${selectedChat}-${messages?.length ?? 0}` : null}
       messages={
         messages?.map((m) => (
           <MessageBubble
             key={m.message_id}
             text={m.text}
+            imageUrl={m.image_url}
+            linkUrl={m.link_url}
+            linkTitle={m.link_title}
+            messageType={m.message_type}
             isOutgoing={m.is_outgoing}
             time={formatMessageTime(m.avito_created)}
           />
@@ -182,7 +182,10 @@ export function AvitoChatPanel() {
       draft={draft}
       onDraftChange={setDraft}
       onSend={handleSend}
-      sendPending={send.isPending}
+      sendPending={sendPending}
+      enableAttach
+      attachAccept={AVITO_ATTACHMENT_ACCEPT}
+      onAttachFiles={handleAttachFiles}
     />
   );
 }
