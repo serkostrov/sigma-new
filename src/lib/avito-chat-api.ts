@@ -17,6 +17,7 @@ import {
   avitoAttachmentKind,
   avitoUnsupportedFileMessage,
   isAvitoNativeImage,
+  resolveAttachmentMimeType,
 } from "./avito/avito-media";
 
 export {
@@ -57,10 +58,9 @@ async function fetchAvitoMessages(chatId: string): Promise<AvitoChatMessage[]> {
   const { data, error } = await (supabase as any)
     .from("avito_messages")
     .select("*")
-    .eq("chat_id", chatId)
-    .order("avito_created", { ascending: true });
+    .eq("chat_id", chatId);
   if (error) throw error;
-  return (data ?? []) as AvitoChatMessage[];
+  return sortAvitoMessages((data ?? []) as AvitoChatMessage[]);
 }
 
 async function fetchAvitoPreview(chatId: string): Promise<AvitoChatMessage[]> {
@@ -201,7 +201,7 @@ export function useSendAvitoAttachment() {
         throw new Error(`Файл «${file.name}» больше 50 МБ`);
       }
 
-      const mimeType = file.type || "application/octet-stream";
+      const mimeType = resolveAttachmentMimeType(file.name, file.type || "");
       const kind = avitoAttachmentKind(mimeType);
       if (kind === "image" && file.size > AVITO_IMAGE_MAX_BYTES) {
         throw new Error(`Изображение «${file.name}» больше 24 МБ (лимит Авито)`);
@@ -226,7 +226,7 @@ export function useSendAvitoAttachment() {
 }
 
 export function avitoAttachmentHint(file: File): string | null {
-  const mimeType = file.type || "application/octet-stream";
+  const mimeType = resolveAttachmentMimeType(file.name, file.type || "");
   const kind = avitoAttachmentKind(mimeType);
   if (kind === "image" && isAvitoNativeImage(mimeType) && file.size <= AVITO_IMAGE_MAX_BYTES) {
     return null;

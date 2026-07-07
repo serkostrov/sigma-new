@@ -61,7 +61,7 @@ export function ChatPage({
 
   return (
     <div>
-      <PageHeader title="Чат" description="Сообщения из ВКонтакте и Авито" />
+      <PageHeader title="Чат" description="Сообщения из Авито и ВКонтакте" />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as ChatTab)} className="w-full">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">

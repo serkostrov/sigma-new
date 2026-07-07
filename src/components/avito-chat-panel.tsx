@@ -97,6 +97,10 @@ export function AvitoChatPanel() {
   const handleSend = () => {
     const text = draft.trim();
     if (!text || selectedChat == null) return;
+    if (previewOnly) {
+      toast.error("Отправка недоступна без подписки «API мессенджера» на Авито");
+      return;
+    }
     send.mutate(
       { chatId: selectedChat, text },
       {
@@ -108,6 +112,10 @@ export function AvitoChatPanel() {
 
   const handleAttachFiles = async (files: File[]) => {
     if (selectedChat == null || files.length === 0) return;
+    if (previewOnly) {
+      toast.error("Отправка файлов недоступна без подписки «API мессенджера» на Авито");
+      return;
+    }
 
     for (const file of files) {
       const hint = avitoAttachmentHint(file);
@@ -183,6 +191,7 @@ export function AvitoChatPanel() {
       onDraftChange={setDraft}
       onSend={handleSend}
       sendPending={sendPending}
+      composeDisabled={previewOnly}
       enableAttach
       attachAccept={AVITO_ATTACHMENT_ACCEPT}
       onAttachFiles={handleAttachFiles}

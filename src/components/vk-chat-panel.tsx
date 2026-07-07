@@ -303,6 +303,7 @@ export function MessengerLayout({
   onDraftChange,
   onSend,
   sendPending,
+  composeDisabled,
   enableAttach,
   onAttachFiles,
   attachAccept,
@@ -324,6 +325,7 @@ export function MessengerLayout({
   onDraftChange: (v: string) => void;
   onSend: () => void;
   sendPending: boolean;
+  composeDisabled?: boolean;
   enableAttach?: boolean;
   onAttachFiles?: (files: File[]) => void;
   attachAccept?: string;
@@ -497,7 +499,7 @@ export function MessengerLayout({
                       type="button"
                       variant="outline"
                       size="icon"
-                      disabled={sendPending}
+                      disabled={sendPending || composeDisabled}
                       onClick={() => fileInputRef.current?.click()}
                       aria-label="Прикрепить файл"
                     >
@@ -506,7 +508,11 @@ export function MessengerLayout({
                   </>
                 ) : null}
                 <Input
-                  placeholder="Написать сообщение…"
+                  placeholder={
+                    composeDisabled
+                      ? "Отправка недоступна без подписки API мессенджера"
+                      : "Написать сообщение…"
+                  }
                   value={draft}
                   onChange={(e) => onDraftChange(e.target.value)}
                   onKeyDown={(e) => {
@@ -515,9 +521,12 @@ export function MessengerLayout({
                       onSend();
                     }
                   }}
-                  disabled={sendPending}
+                  disabled={sendPending || composeDisabled}
                 />
-                <Button onClick={onSend} disabled={sendPending || !draft.trim()}>
+                <Button
+                  onClick={onSend}
+                  disabled={sendPending || composeDisabled || !draft.trim()}
+                >
                   {sendPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (

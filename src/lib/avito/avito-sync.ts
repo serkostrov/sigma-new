@@ -7,6 +7,7 @@ import {
   isAvitoMessengerSubscriptionError,
   messagePreview,
   parseAvitoMessage,
+  pickBestImageUrl,
   sortAvitoMessages,
   storedMessagePreview,
   type AvitoChatsResponse,
@@ -25,6 +26,7 @@ import {
   AVITO_IMAGE_MAX_BYTES,
   avitoUploadImage,
   isAvitoNativeImage,
+  resolveAttachmentMimeType,
   sanitizeAttachmentFileName,
 } from "./avito-media";
 import { getAvitoAccessToken, resolveAvitoUserId } from "./avito-token";
@@ -33,6 +35,24 @@ async function avitoContext() {
   const accessToken = await getAvitoAccessToken();
   const userId = await resolveAvitoUserId(accessToken);
   return { accessToken, userId };
+}
+
+function assertAvitoMessengerWritable(): void {
+  if (getAvitoMessengerApiAvailable() === false) {
+    throw new Error(
+      "Отправка недоступна без подписки «API мессенджера» на Авито.",
+    );
+  }
+}
+
+function rethrowAvitoSendError(error: unknown): never {
+  if (isAvitoMessengerSubscriptionError(error)) {
+    markAvitoMessengerApiUnavailable();
+    throw new Error(
+      "Отправка недоступна без подписки «API мессенджера» на Авито.",
+    );
+  }
+  throw error;
 }
 
 type StoredMessageRow = {
@@ -130,7 +150,12 @@ async function uploadAttachmentLink(
     .from(AVITO_CHAT_BUCKET)
     .upload(path, bytes, { contentType: mimeType, upsert: false });
 
-  if (uploadError) throw uploadError;
+  if (uploadError) {
+    const hint = uploadError.message.toLowerCase().includes("bucket")
+      ? " Хранилище avito-chat не настроено — примените миграцию supabase."
+      : "";
+    throw new Error(`Не удалось загрузить файл${hint}: ${uploadError.message}`);
+  }
 
   const { data } = db.storage.from(AVITO_CHAT_BUCKET).getPublicUrl(path);
   if (!data.publicUrl) {
@@ -293,31 +318,39 @@ export async function sendAvitoMessage(
   chatId: string,
   text: string,
 ): Promise<string> {
+  assertAvitoMessengerWritable();
+
   const { accessToken, userId } = await avitoContext();
 
-  const result = await avitoApiCall<{ id?: string; created?: number }>(
-    `/messenger/v1/accounts/${userId}/chats/${chatId}/messages`,
-    accessToken,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        type: "text",
-        message: { text },
-      }),
-    },
-  );
+  try {
+    const result = await avitoApiCall<{ id?: string; created?: number }>(
+      `/messenger/v1/accounts/${userId}/chats/${chatId}/messages`,
+      accessToken,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          type: "text",
+          message: { text },
+        }),
+      },
+    );
 
-  const messageId = result.id ?? crypto.randomUUID();
-  await insertOutboundMessage(
-    db,
-    chatId,
-    userId,
-    messageId,
-    { type: "text", text },
-    result.created,
-  );
+    markAvitoMessengerApiAvailable();
 
-  return messageId;
+    const messageId = result.id ?? crypto.randomUUID();
+    await insertOutboundMessage(
+      db,
+      chatId,
+      userId,
+      messageId,
+      { type: "text", text },
+      result.created,
+    );
+
+    return messageId;
+  } catch (error) {
+    rethrowAvitoSendError(error);
+  }
 }
 
 export async function sendAvitoAttachment(
@@ -327,6 +360,8 @@ export async function sendAvitoAttachment(
   mimeType: string,
   bytes: Uint8Array,
 ): Promise<{ messageId: string; delivery: "image" | "link" }> {
+  assertAvitoMessengerWritable();
+
   if (bytes.byteLength === 0) {
     throw new Error("Файл пустой");
   }
@@ -334,35 +369,48 @@ export async function sendAvitoAttachment(
     throw new Error("Файл больше 50 МБ");
   }
 
-  const normalizedMime = mimeType.toLowerCase() || "application/octet-stream";
+  const normalizedMime = resolveAttachmentMimeType(fileName, mimeType);
   const canSendNativeImage =
     isAvitoNativeImage(normalizedMime) && bytes.byteLength <= AVITO_IMAGE_MAX_BYTES;
 
-  if (canSendNativeImage) {
-    const { accessToken, userId } = await avitoContext();
-    const blob = new Blob([bytes], { type: normalizedMime });
-    const imageId = await avitoUploadImage(userId, accessToken, blob, fileName);
+  try {
+    if (canSendNativeImage) {
+      const { accessToken, userId } = await avitoContext();
+      const blob = new Blob([bytes], { type: normalizedMime });
+      const uploaded = await avitoUploadImage(userId, accessToken, blob, fileName);
 
-    const sent = await avitoApiCall<AvitoMessagePayload & { id?: string }>(
-      `/messenger/v1/accounts/${userId}/chats/${chatId}/messages/image`,
-      accessToken,
-      {
-        method: "POST",
-        body: JSON.stringify({ image_id: imageId }),
-      },
-    );
+      const sent = await avitoApiCall<AvitoMessagePayload & { id?: string }>(
+        `/messenger/v1/accounts/${userId}/chats/${chatId}/messages/image`,
+        accessToken,
+        {
+          method: "POST",
+          body: JSON.stringify({ image_id: uploaded.imageId }),
+        },
+      );
 
-    const messageId = sent.id ?? crypto.randomUUID();
-    const parsed = parseAvitoMessage({ ...sent, id: messageId, type: "image" });
-    await insertOutboundMessage(db, chatId, userId, messageId, parsed, sent.created);
+      markAvitoMessengerApiAvailable();
 
-    return { messageId, delivery: "image" };
+      const messageId = sent.id ?? crypto.randomUUID();
+      const imageUrl = pickBestImageUrl(uploaded.sizes);
+      await insertOutboundMessage(
+        db,
+        chatId,
+        userId,
+        messageId,
+        { type: "image", text: "", imageUrl },
+        sent.created,
+      );
+
+      return { messageId, delivery: "image" };
+    }
+
+    const publicUrl = await uploadAttachmentLink(db, chatId, fileName, normalizedMime, bytes);
+    const safeName = sanitizeAttachmentFileName(fileName);
+    const text = `Файл: ${safeName}\n${publicUrl}`;
+    const messageId = await sendAvitoMessage(db, chatId, text);
+
+    return { messageId, delivery: "link" };
+  } catch (error) {
+    rethrowAvitoSendError(error);
   }
-
-  const publicUrl = await uploadAttachmentLink(db, chatId, fileName, normalizedMime, bytes);
-  const safeName = sanitizeAttachmentFileName(fileName);
-  const text = `Файл: ${safeName}\n${publicUrl}`;
-  const messageId = await sendAvitoMessage(db, chatId, text);
-
-  return { messageId, delivery: "link" };
 }

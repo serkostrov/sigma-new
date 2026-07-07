@@ -201,7 +201,7 @@ export function displayMessageText(text: string): string {
   return cleaned || text.trim();
 }
 
-function pickBestImageUrl(sizes?: Record<string, string>): string | undefined {
+export function pickBestImageUrl(sizes?: Record<string, string>): string | undefined {
   if (!sizes) return undefined;
   const preferred = ["1280x960", "640x480", "320x240", "140x105", "32x32"];
   for (const key of preferred) {

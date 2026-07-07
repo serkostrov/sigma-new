@@ -115,8 +115,17 @@ export const sendAvitoChatMessage = createServerFn({ method: "POST" })
       throw new Error("Нет доступа к чату");
     }
 
+    if (!avitoCredentialsConfigured()) {
+      throw new Error(
+        "Авито не подключён. Укажите AVITO_CLIENT_ID и AVITO_CLIENT_SECRET в .env",
+      );
+    }
+
     const text = data.text.trim();
     if (!text) throw new Error("Сообщение пустое");
+    if (text.length > 1000) {
+      throw new Error("Сообщение не должно быть длиннее 1000 символов");
+    }
 
     const messageId = await sendAvitoMessage(chatWriteDb(supabase), data.chatId, text);
     return { messageId };
@@ -138,6 +147,12 @@ export const sendAvitoChatAttachment = createServerFn({ method: "POST" })
       throw new Error("Нет доступа к чату");
     }
 
+    if (!avitoCredentialsConfigured()) {
+      throw new Error(
+        "Авито не подключён. Укажите AVITO_CLIENT_ID и AVITO_CLIENT_SECRET в .env",
+      );
+    }
+
     const fileName = data.fileName.trim();
     if (!fileName) throw new Error("Имя файла не указано");
 
@@ -147,7 +162,7 @@ export const sendAvitoChatAttachment = createServerFn({ method: "POST" })
     }
 
     return sendAvitoAttachment(
-      supabase,
+      chatWriteDb(supabase),
       data.chatId,
       fileName,
       data.mimeType || "application/octet-stream",
@@ -168,6 +183,6 @@ export const markAvitoChatReadFn = createServerFn({ method: "POST" })
       return { ok: false as const };
     }
 
-    await markAvitoChatRead(supabase, data.chatId);
+    await markAvitoChatRead(chatWriteDb(supabase), data.chatId);
     return { ok: true as const };
   });

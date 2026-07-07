@@ -11,8 +11,47 @@ export const AVITO_IMAGE_MIME_TYPES = new Set([
   "image/bmp",
   "image/heic",
   "image/heif",
-  "image/webp",
 ]);
+
+const EXTENSION_MIME_TYPES: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  bmp: "image/bmp",
+  heic: "image/heic",
+  heif: "image/heif",
+  webp: "image/webp",
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  txt: "text/plain",
+  zip: "application/zip",
+  rar: "application/vnd.rar",
+  "7z": "application/x-7z-compressed",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+};
+
+export function guessMimeFromFileName(fileName: string): string | undefined {
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  if (!ext) return undefined;
+  return EXTENSION_MIME_TYPES[ext];
+}
+
+export function resolveAttachmentMimeType(fileName: string, mimeType: string): string {
+  const normalized = mimeType.toLowerCase().trim();
+  if (normalized && normalized !== "application/octet-stream") return normalized;
+  return guessMimeFromFileName(fileName) ?? "application/octet-stream";
+}
 
 export const AVITO_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 
@@ -23,6 +62,11 @@ export type AvitoUploadImagesResponse = Record<
   string,
   Record<string, string>
 >;
+
+export type AvitoUploadedImage = {
+  imageId: string;
+  sizes: Record<string, string>;
+};
 
 export function isAvitoNativeImage(mimeType: string): boolean {
   return AVITO_IMAGE_MIME_TYPES.has(mimeType.toLowerCase());
@@ -40,7 +84,7 @@ export function avitoAttachmentKind(
 
 export function avitoUnsupportedFileMessage(kind: ReturnType<typeof avitoAttachmentKind>): string {
   if (kind === "image") {
-    return "Неподдерживаемый формат изображения. Авито принимает JPEG, PNG, GIF, BMP, HEIC до 24 МБ.";
+    return "Формат не поддерживается Авито напрямую (например WebP). Файл будет отправлен ссылкой в сообщении.";
   }
   return "Авито не поддерживает отправку этого типа файла напрямую. Файл будет отправлен ссылкой в сообщении.";
 }
@@ -61,7 +105,7 @@ export async function avitoUploadImage(
   accessToken: string,
   file: Blob,
   filename: string,
-): Promise<string> {
+): Promise<AvitoUploadedImage> {
   const form = new FormData();
   form.append("uploadfile[]", file, filename);
 
@@ -81,7 +125,7 @@ export async function avitoUploadImage(
   if (!imageId) {
     throw new Error("Авито не вернул идентификатор изображения");
   }
-  return imageId;
+  return { imageId, sizes: json[imageId] ?? {} };
 }
 
 export function sanitizeAttachmentFileName(name: string): string {
