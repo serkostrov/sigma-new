@@ -1,6 +1,14 @@
 import type { ChatDb } from "@/lib/chat-db";
 import { serverEnv } from "@/lib/server-env";
 
+function isConnectionValid(
+  row: { access_token: string; expires_at: string | null } | null,
+): string | null {
+  if (!row?.access_token) return null;
+  if (row.expires_at && new Date(row.expires_at) < new Date()) return null;
+  return row.access_token;
+}
+
 export async function resolveVkAccessToken(
   db: ChatDb,
   userId: string,
@@ -8,20 +16,29 @@ export async function resolveVkAccessToken(
   const envToken = serverEnv("VK_ACCESS_TOKEN");
   if (envToken) return envToken;
 
-  const { data, error } = await db
+  const { data: own, error: ownError } = await db
     .from("vk_connections")
     .select("access_token, expires_at")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (error) throw error;
-  if (!data?.access_token) return null;
+  if (ownError) throw ownError;
 
-  if (data.expires_at && new Date(data.expires_at) < new Date()) {
-    return null;
-  }
+  const ownToken = isConnectionValid(own);
+  if (ownToken) return ownToken;
 
-  return data.access_token;
+  const { data: sharedRows, error: sharedError } = await db
+    .from("vk_connections")
+    .select("access_token, expires_at")
+    .order("updated_at", { ascending: false })
+    .limit(1);
+
+  if (sharedError) throw sharedError;
+
+  const sharedToken = isConnectionValid(sharedRows?.[0] ?? null);
+  if (sharedToken) return sharedToken;
+
+  return null;
 }
 
 export function vkAppConfigured(): boolean {

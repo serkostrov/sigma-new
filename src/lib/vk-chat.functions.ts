@@ -8,32 +8,14 @@ import {
   vkAppConfigured,
   vkRedirectUri,
 } from "./vk/vk-token";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/integrations/supabase/types";
 import { chatWriteDb } from "./chat-db";
+import { userCanChat } from "./chat-permissions";
 import {
   markVkPeerRead,
   sendVkMessage,
   syncAllVkChat,
   syncVkHistory,
 } from "./vk/vk-sync";
-
-async function userCanChat(
-  supabase: SupabaseClient<Database>,
-  userId: string,
-): Promise<string | null> {
-  try {
-    const { data, error } = await supabase.rpc("user_has_permission", {
-      _user_id: userId,
-      _key: "chat.view",
-    });
-    if (error) return error.message;
-    if (!data) return "Нет доступа к чату";
-    return null;
-  } catch (error) {
-    return error instanceof Error ? error.message : "Нет доступа к чату";
-  }
-}
 
 export const getVkChatStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -131,7 +113,9 @@ export const syncVkChat = createServerFn({ method: "POST" })
 
     const token = await resolveVkAccessToken(supabase, userId);
     if (!token) {
-      throw new Error("VK не подключён. Укажите VK_ACCESS_TOKEN или авторизуйтесь через ВКонтакте.");
+      throw new Error(
+        "VK не подключён. Укажите VK_ACCESS_TOKEN в .env или войдите через ВКонтакте (достаточно одного подключения на компанию).",
+      );
     }
 
     return syncAllVkChat(chatWriteDb(supabase), token);
@@ -147,7 +131,9 @@ export const syncVkPeerMessages = createServerFn({ method: "POST" })
 
     const token = await resolveVkAccessToken(supabase, userId);
     if (!token) {
-      throw new Error("VK не подключён");
+      throw new Error(
+        "VK не подключён. Укажите VK_ACCESS_TOKEN в .env или попросите коллегу с доступом к чату подключить ВКонтакте.",
+      );
     }
 
     const peerId = Number(data.peerId);
@@ -168,7 +154,9 @@ export const sendVkChatMessage = createServerFn({ method: "POST" })
 
     const token = await resolveVkAccessToken(supabase, userId);
     if (!token) {
-      throw new Error("VK не подключён");
+      throw new Error(
+        "VK не подключён. Укажите VK_ACCESS_TOKEN в .env или попросите коллегу с доступом к чату подключить ВКонтакте.",
+      );
     }
 
     const messageId = await sendVkMessage(

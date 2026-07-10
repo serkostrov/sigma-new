@@ -1,7 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/integrations/supabase/types";
 import {
   avitoCredentialsConfigured,
   getAvitoAccessToken,
@@ -9,6 +7,7 @@ import {
 } from "./avito/avito-token";
 import { getAvitoMessengerApiAvailable } from "./avito/avito-messenger-access";
 import { chatWriteDb } from "@/lib/chat-db";
+import { userCanChat } from "@/lib/chat-permissions";
 import {
   sendAvitoAttachment,
   sendAvitoMessage,
@@ -17,23 +16,6 @@ import {
   markAvitoChatRead,
 } from "./avito/avito-sync";
 import { AVITO_ATTACHMENT_MAX_BYTES } from "./avito/avito-media";
-
-async function userCanChat(
-  supabase: SupabaseClient<Database>,
-  userId: string,
-): Promise<string | null> {
-  try {
-    const { data, error } = await supabase.rpc("user_has_permission", {
-      _user_id: userId,
-      _key: "chat.view",
-    });
-    if (error) return error.message;
-    if (!data) return "Нет доступа к чату";
-    return null;
-  } catch (error) {
-    return error instanceof Error ? error.message : "Нет доступа к чату";
-  }
-}
 
 export const getAvitoChatStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

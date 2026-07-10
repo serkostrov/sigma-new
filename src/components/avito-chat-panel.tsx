@@ -140,7 +140,7 @@ export function AvitoChatPanel() {
       { chatId: selectedChat, text },
       {
         onSuccess: () => setDraft(""),
-        onError: (e) => toast.error(e instanceof Error ? e.message : "Не удалось отправить"),
+        onError: (e) => toast.error(formatQueryError(e)),
       },
     );
   };
@@ -164,7 +164,7 @@ export function AvitoChatPanel() {
           toast.success(`Файл «${file.name}» отправлен ссылкой`);
         }
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : `Не удалось отправить «${file.name}»`);
+        toast.error(formatQueryError(e));
       }
     }
   };

@@ -153,7 +153,7 @@ export function VkChatPanel({ oauthCode }: { oauthCode?: string }) {
       { peerId: selectedPeer, text },
       {
         onSuccess: () => setDraft(""),
-        onError: (e) => toast.error(e instanceof Error ? e.message : "Не удалось отправить"),
+        onError: (e) => toast.error(formatQueryError(e)),
       },
     );
   };
