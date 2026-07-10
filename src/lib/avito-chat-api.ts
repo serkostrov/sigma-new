@@ -32,6 +32,7 @@ export type AvitoConversation = {
   title: string;
   photo_url: string | null;
   item_title: string | null;
+  source_url: string | null;
   last_message_text: string | null;
   last_message_at: string | null;
   unread_count: number;

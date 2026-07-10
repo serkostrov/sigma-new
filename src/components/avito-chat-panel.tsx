@@ -17,6 +17,7 @@ import {
   type AvitoConversation,
 } from "@/lib/avito-chat-api";
 import { toast } from "sonner";
+import { avitoChatSourceUrlFromId } from "@/lib/avito/avito-client";
 import { formatQueryError, isDatabaseErrorMessage } from "@/lib/query-error";
 
 function formatMessageTime(unixSeconds: number): string {
@@ -182,21 +183,33 @@ export function AvitoChatPanel() {
       selectedId={selectedChat}
       onBack={() => setSelectedChat(null)}
       conversationList={
-        conversations?.map((c: AvitoConversation) => (
-          <MessengerConversationItem
-            key={c.chat_id}
-            title={c.title}
-            subtitle={c.item_title}
-            preview={c.last_message_text}
-            photoUrl={c.photo_url}
-            initials={conversationInitials(c.title) || "А"}
-            unreadCount={c.unread_count}
-            active={selectedChat === c.chat_id}
-            onClick={() => setSelectedChat(c.chat_id)}
-          />
-        )) ?? null
+        conversations?.map((c: AvitoConversation) => {
+          const href = avitoChatSourceUrlFromId(c.chat_id, c.source_url);
+          return (
+            <MessengerConversationItem
+              key={c.chat_id}
+              title={c.title}
+              subtitle={c.item_title}
+              preview={c.last_message_text}
+              photoUrl={c.photo_url}
+              initials={conversationInitials(c.title) || "А"}
+              unreadCount={c.unread_count}
+              active={selectedChat === c.chat_id}
+              href={href}
+              onClick={() => setSelectedChat(c.chat_id)}
+            />
+          );
+        }) ?? null
       }
       threadTitle={activeConversation?.title ?? (selectedChat != null ? "Диалог" : "")}
+      threadHref={
+        selectedChat != null
+          ? avitoChatSourceUrlFromId(
+              selectedChat,
+              activeConversation?.source_url ?? null,
+            )
+          : null
+      }
       threadNotice={threadNotice}
       messagesLoading={msgLoading}
       messagesError={

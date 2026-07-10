@@ -11,6 +11,7 @@ export function MessengerConversationItem({
   initials,
   unreadCount,
   active,
+  href,
   onClick,
 }: {
   title: string;
@@ -20,6 +21,7 @@ export function MessengerConversationItem({
   initials: string;
   unreadCount: number;
   active: boolean;
+  href?: string | null;
   onClick: () => void;
 }) {
   const hasUnread = unreadCount > 0;
@@ -45,14 +47,29 @@ export function MessengerConversationItem({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span
-            className={cn(
-              "text-sm truncate",
-              hasUnread ? "font-semibold text-foreground" : "font-medium",
-            )}
-          >
-            {title}
-          </span>
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "text-sm truncate hover:underline text-primary",
+                hasUnread ? "font-semibold" : "font-medium",
+              )}
+            >
+              {title}
+            </a>
+          ) : (
+            <span
+              className={cn(
+                "text-sm truncate",
+                hasUnread ? "font-semibold text-foreground" : "font-medium",
+              )}
+            >
+              {title}
+            </span>
+          )}
           <ChatUnreadBadge count={unreadCount} size="xs" />
         </div>
         {subtitle ? (

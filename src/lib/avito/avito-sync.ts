@@ -1,6 +1,7 @@
 import type { ChatDb } from "@/lib/chat-db";
 import {
   avitoApiCall,
+  avitoChatSourceUrl,
   chatPhoto,
   chatTitle,
   chronologicalMessageSeq,
@@ -187,6 +188,7 @@ export async function syncAvitoConversations(
         title,
         photo_url: photo,
         item_title: chat.context?.value?.title ?? null,
+        source_url: avitoChatSourceUrl(chat),
         last_message_text: last ? messagePreview(last) : "",
         last_message_at: last?.created
           ? new Date(last.created * 1000).toISOString()

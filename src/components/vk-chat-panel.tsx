@@ -4,6 +4,7 @@ import { ru } from "date-fns/locale";
 import { Loader2, MessageCircle, Paperclip, Send } from "lucide-react";
 import { toast } from "sonner";
 import { formatQueryError } from "@/lib/query-error";
+import { vkConversationSourceUrl } from "@/lib/chat-links";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -169,20 +170,25 @@ export function VkChatPanel({ oauthCode }: { oauthCode?: string }) {
       selectedId={selectedPeer}
       onBack={() => setSelectedPeer(null)}
       conversationList={
-        conversations?.map((c) => (
-          <MessengerConversationItem
-            key={c.peer_id}
-            title={c.title}
-            preview={c.last_message_text}
-            photoUrl={c.photo_url}
-            initials={conversationInitials(c.title) || "?"}
-            unreadCount={c.unread_count}
-            active={selectedPeer === c.peer_id}
-            onClick={() => setSelectedPeer(Number(c.peer_id))}
-          />
-        )) ?? null
+        conversations?.map((c) => {
+          const href = vkConversationSourceUrl(c.peer_id);
+          return (
+            <MessengerConversationItem
+              key={c.peer_id}
+              title={c.title}
+              preview={c.last_message_text}
+              photoUrl={c.photo_url}
+              initials={conversationInitials(c.title) || "?"}
+              unreadCount={c.unread_count}
+              active={selectedPeer === c.peer_id}
+              href={href}
+              onClick={() => setSelectedPeer(Number(c.peer_id))}
+            />
+          );
+        }) ?? null
       }
       threadTitle={activeConversation?.title ?? (selectedPeer != null ? `Диалог ${selectedPeer}` : "")}
+      threadHref={selectedPeer != null ? vkConversationSourceUrl(selectedPeer) : null}
       threadNotice={null}
       messagesLoading={msgLoading}
       messagesError={
@@ -314,6 +320,7 @@ export function MessengerLayout({
   selectedId,
   onBack,
   threadTitle,
+  threadHref,
   threadNotice,
   messagesLoading,
   messagesError,
@@ -335,6 +342,7 @@ export function MessengerLayout({
   selectedId: string | number | null;
   onBack: () => void;
   threadTitle: string;
+  threadHref?: string | null;
   threadNotice?: string | null;
   messagesLoading: boolean;
   messagesError: string | null;
@@ -476,7 +484,20 @@ export function MessengerLayout({
                 >
                   ←
                 </Button>
-                <span className="truncate">{threadTitle}</span>
+                <span className="truncate min-w-0 flex-1">
+                  {threadHref ? (
+                    <a
+                      href={threadHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline text-primary"
+                    >
+                      {threadTitle}
+                    </a>
+                  ) : (
+                    threadTitle
+                  )}
+                </span>
               </div>
               {threadNotice ? (
                 <p className="px-4 py-2 text-xs text-amber-700 bg-amber-50 border-b border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-900">

@@ -218,6 +218,25 @@ export function normalizeAvitoUrl(url?: string): string | undefined {
   return `https://${trimmed}`;
 }
 
+/** Ссылка на объявление или диалог в мессенджере Авито. */
+export function avitoChatSourceUrl(chat: AvitoChat): string | null {
+  const itemUrl = normalizeAvitoUrl(chat.context?.value?.url);
+  if (itemUrl) return itemUrl;
+  if (chat.id) {
+    return `https://www.avito.ru/profile/messenger/channel/${encodeURIComponent(chat.id)}`;
+  }
+  return null;
+}
+
+export function avitoChatSourceUrlFromId(chatId: string, storedUrl?: string | null): string | null {
+  const normalized = normalizeAvitoUrl(storedUrl ?? undefined);
+  if (normalized) return normalized;
+  if (chatId) {
+    return `https://www.avito.ru/profile/messenger/channel/${encodeURIComponent(chatId)}`;
+  }
+  return null;
+}
+
 export function parseAvitoMessage(message: AvitoMessagePayload): ParsedAvitoMessage {
   const type = message.type ?? "text";
   const content = message.content;
