@@ -156,6 +156,30 @@ export type AvitoMessagesResponse = {
   messages?: AvitoMessagePayload[];
 };
 
+export type AvitoChatKind = "u2i" | "u2u";
+
+export function resolveAvitoChatKind(chat: AvitoChat): AvitoChatKind {
+  const type = chat.context?.type?.toLowerCase();
+  if (type === "u2u" || type === "user") return "u2u";
+  if (type === "u2i" || type === "item") return "u2i";
+  if (chat.context?.value?.title) return "u2i";
+  return "u2u";
+}
+
+export function chatTitleForKind(
+  chat: AvitoChat,
+  kind: AvitoChatKind,
+  selfUserId?: number,
+): string {
+  if (kind === "u2u") {
+    const otherUser =
+      chat.users?.find((u) => u.id !== selfUserId) ?? chat.users?.[0];
+    const userName = otherUser?.name?.trim();
+    return userName || `Чат ${chat.id.slice(0, 8)}`;
+  }
+  return chatTitle(chat, selfUserId);
+}
+
 export function chatTitle(chat: AvitoChat, selfUserId?: number): string {
   const itemTitle = chat.context?.value?.title;
   const otherUser =

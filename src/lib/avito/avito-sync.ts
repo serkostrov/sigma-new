@@ -3,7 +3,9 @@ import {
   avitoApiCall,
   avitoChatSourceUrl,
   chatPhoto,
-  chatTitle,
+  chatTitleForKind,
+  resolveAvitoChatKind,
+  type AvitoChatKind,
   chronologicalMessageSeq,
   isAvitoMessengerSubscriptionError,
   messagePreview,
@@ -170,39 +172,45 @@ export async function syncAvitoConversations(
   db: ChatDb,
   accessToken: string,
   userId: number,
+  chatTypes: AvitoChatKind[] = ["u2i", "u2u"],
 ): Promise<number> {
-  const data = await avitoApiCall<AvitoChatsResponse>(
-    `/messenger/v2/accounts/${userId}/chats?limit=50&offset=0`,
-    accessToken,
-  );
-
   let synced = 0;
-  for (const chat of data.chats ?? []) {
-    const title = chatTitle(chat, userId);
-    const photo = chatPhoto(chat, userId);
-    const last = chat.last_message;
 
-    const { error } = await db.from("avito_conversations").upsert(
-      {
-        chat_id: chat.id,
-        title,
-        photo_url: photo,
-        item_title: chat.context?.value?.title ?? null,
-        source_url: avitoChatSourceUrl(chat),
-        last_message_text: last ? messagePreview(last) : "",
-        last_message_at: last?.created
-          ? new Date(last.created * 1000).toISOString()
-          : null,
-        unread_count: chat.unread_count ?? 0,
-        synced_at: new Date().toISOString(),
-      },
-      { onConflict: "chat_id" },
+  for (const requestedKind of chatTypes) {
+    const data = await avitoApiCall<AvitoChatsResponse>(
+      `/messenger/v2/accounts/${userId}/chats?limit=50&offset=0&chat_types=${requestedKind}`,
+      accessToken,
     );
 
-    if (error) throw error;
-    synced += 1;
+    for (const chat of data.chats ?? []) {
+      const chatKind = resolveAvitoChatKind(chat);
+      const title = chatTitleForKind(chat, chatKind, userId);
+      const photo = chatPhoto(chat, userId);
+      const last = chat.last_message;
 
-    await updateConversationLastMessage(db, chat.id);
+      const { error } = await db.from("avito_conversations").upsert(
+        {
+          chat_id: chat.id,
+          chat_kind: chatKind,
+          title,
+          photo_url: photo,
+          item_title: chatKind === "u2i" ? (chat.context?.value?.title ?? null) : null,
+          source_url: avitoChatSourceUrl(chat),
+          last_message_text: last ? messagePreview(last) : "",
+          last_message_at: last?.created
+            ? new Date(last.created * 1000).toISOString()
+            : null,
+          unread_count: chat.unread_count ?? 0,
+          synced_at: new Date().toISOString(),
+        },
+        { onConflict: "chat_id" },
+      );
+
+      if (error) throw error;
+      synced += 1;
+
+      await updateConversationLastMessage(db, chat.id);
+    }
   }
 
   return synced;

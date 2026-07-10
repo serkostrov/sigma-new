@@ -316,6 +316,7 @@ function readStoredSidebarWidth(): number {
 export function MessengerLayout({
   conversationsLoading,
   conversationsEmpty,
+  conversationsEmptyText = "Диалогов пока нет. Нажмите «Обновить».",
   conversationList,
   selectedId,
   onBack,
@@ -338,6 +339,7 @@ export function MessengerLayout({
 }: {
   conversationsLoading: boolean;
   conversationsEmpty: boolean;
+  conversationsEmptyText?: string;
   conversationList: ReactNode;
   selectedId: string | number | null;
   onBack: () => void;
@@ -444,7 +446,7 @@ export function MessengerLayout({
             </div>
           ) : conversationsEmpty ? (
             <p className="p-6 text-sm text-muted-foreground text-center">
-              Диалогов пока нет. Нажмите «Обновить».
+              {conversationsEmptyText}
             </p>
           ) : (
             <div className="p-2 space-y-1">{conversationList}</div>

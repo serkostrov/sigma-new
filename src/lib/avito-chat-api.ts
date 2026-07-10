@@ -10,7 +10,7 @@ import {
   syncAvitoChatMessagesFn,
 } from "./avito-chat.functions";
 import { CHAT_UNREAD_KEY } from "./chat-unread-api";
-import { sortAvitoMessages } from "./avito/avito-client";
+import { sortAvitoMessages, type AvitoChatKind } from "./avito/avito-client";
 import {
   AVITO_ATTACHMENT_ACCEPT,
   AVITO_ATTACHMENT_MAX_BYTES,
@@ -27,8 +27,11 @@ export {
   AVITO_IMAGE_MAX_BYTES,
 };
 
+export type { AvitoChatKind };
+
 export type AvitoConversation = {
   chat_id: string;
+  chat_kind: AvitoChatKind;
   title: string;
   photo_url: string | null;
   item_title: string | null;
@@ -52,9 +55,14 @@ export type AvitoChatMessage = {
   message_seq: number;
 };
 
-export const AVITO_CONVERSATIONS_KEY = ["avito", "conversations"] as const;
+export const avitoConversationsKey = (kind: AvitoChatKind) =>
+  ["avito", "conversations", kind] as const;
+
 export const AVITO_MESSAGES_KEY = (chatId: string) => ["avito", "messages", chatId] as const;
 export const AVITO_STATUS_KEY = ["avito", "status"] as const;
+
+/** @deprecated use avitoConversationsKey */
+export const AVITO_CONVERSATIONS_KEY = ["avito", "conversations"] as const;
 
 async function fetchAvitoMessages(chatId: string): Promise<AvitoChatMessage[]> {
   const { data, error } = await (supabase as any)
@@ -109,13 +117,14 @@ export function useAvitoChatStatus() {
   };
 }
 
-export function useAvitoConversations() {
+export function useAvitoConversations(kind: AvitoChatKind) {
   return useQuery({
-    queryKey: AVITO_CONVERSATIONS_KEY,
+    queryKey: avitoConversationsKey(kind),
     queryFn: async (): Promise<AvitoConversation[]> => {
       const { data, error } = await (supabase as any)
         .from("avito_conversations")
         .select("*")
+        .eq("chat_kind", kind)
         .order("last_message_at", { ascending: false, nullsFirst: false });
       if (error) throw error;
       return (data ?? []) as AvitoConversation[];
@@ -153,7 +162,7 @@ export function useSyncAvitoChat() {
   return useMutation({
     mutationFn: () => syncAvitoChat(),
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: AVITO_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ["avito", "conversations"] });
       qc.invalidateQueries({ queryKey: ["avito", "messages"] });
       qc.setQueryData(AVITO_STATUS_KEY, (prev: Awaited<ReturnType<typeof getAvitoChatStatus>> | undefined) =>
         prev
@@ -171,7 +180,7 @@ export function useSyncAvitoChatMessages() {
     mutationFn: (chatId: string) => syncAvitoChatMessagesFn({ data: { chatId } }),
     onSuccess: (_r, chatId) => {
       qc.invalidateQueries({ queryKey: AVITO_MESSAGES_KEY(chatId) });
-      qc.invalidateQueries({ queryKey: AVITO_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ["avito", "conversations"] });
       qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
     },
   });
@@ -184,7 +193,7 @@ export function useSendAvitoMessage() {
       sendAvitoChatMessage({ data: input }),
     onSuccess: (_r, input) => {
       qc.invalidateQueries({ queryKey: AVITO_MESSAGES_KEY(input.chatId) });
-      qc.invalidateQueries({ queryKey: AVITO_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ["avito", "conversations"] });
       qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
     },
   });
@@ -228,7 +237,7 @@ export function useSendAvitoAttachment() {
     },
     onSuccess: (_r, input) => {
       qc.invalidateQueries({ queryKey: AVITO_MESSAGES_KEY(input.chatId) });
-      qc.invalidateQueries({ queryKey: AVITO_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ["avito", "conversations"] });
       qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
     },
   });
@@ -248,11 +257,8 @@ export function useMarkAvitoChatRead() {
   return useMutation({
     mutationFn: (chatId: string) => markAvitoChatReadFn({ data: { chatId } }),
     onSuccess: (_r, chatId) => {
-      qc.invalidateQueries({ queryKey: AVITO_CONVERSATIONS_KEY });
+      qc.invalidateQueries({ queryKey: ["avito", "conversations"] });
       qc.invalidateQueries({ queryKey: CHAT_UNREAD_KEY });
-      qc.setQueryData<AvitoConversation[]>(AVITO_CONVERSATIONS_KEY, (prev) =>
-        prev?.map((c) => (c.chat_id === chatId ? { ...c, unread_count: 0 } : c)),
-      );
     },
   });
 }

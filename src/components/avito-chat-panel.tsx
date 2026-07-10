@@ -14,6 +14,7 @@ import {
   useSendAvitoAttachment,
   useSendAvitoMessage,
   useSyncAvitoChatMessages,
+  type AvitoChatKind,
   type AvitoConversation,
 } from "@/lib/avito-chat-api";
 import { toast } from "sonner";
@@ -100,12 +101,12 @@ AVITO_USER_ID=опционально`}
   );
 }
 
-export function AvitoChatPanel() {
+export function AvitoChatPanel({ kind = "u2i" }: { kind?: AvitoChatKind }) {
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
 
   const { data: status } = useAvitoChatStatus();
-  const { data: conversations, isLoading: convLoading } = useAvitoConversations();
+  const { data: conversations, isLoading: convLoading } = useAvitoConversations(kind);
   const {
     data: messages,
     isLoading: msgLoading,
@@ -180,6 +181,11 @@ export function AvitoChatPanel() {
     <MessengerLayout
       conversationsLoading={convLoading}
       conversationsEmpty={(conversations?.length ?? 0) === 0}
+      conversationsEmptyText={
+        kind === "u2u"
+          ? "Нет личных диалогов на Авито"
+          : "Нет диалогов по объявлениям"
+      }
       selectedId={selectedChat}
       onBack={() => setSelectedChat(null)}
       conversationList={
@@ -189,7 +195,7 @@ export function AvitoChatPanel() {
             <MessengerConversationItem
               key={c.chat_id}
               title={c.title}
-              subtitle={c.item_title}
+              subtitle={kind === "u2i" ? c.item_title : null}
               preview={c.last_message_text}
               photoUrl={c.photo_url}
               initials={conversationInitials(c.title) || "А"}

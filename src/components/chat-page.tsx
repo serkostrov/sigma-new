@@ -5,43 +5,24 @@ import { AvitoChatPanel } from "@/components/avito-chat-panel";
 import { ChatUnreadBadge } from "@/components/chat-unread-badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { VkChatPanel } from "@/components/vk-chat-panel";
 import { useChatUnreadCounts } from "@/lib/chat-unread-api";
 import { useAvitoChatStatus, useSyncAvitoChat } from "@/lib/avito-chat-api";
-import { useSyncVkChat, useVkChatStatus } from "@/lib/vk-chat-api";
 
-type ChatTab = "vk" | "avito";
+export type ChatTab = "listings" | "personal";
 
-export function ChatPage({
-  oauthCode,
-  initialTab = "avito",
-}: {
-  oauthCode?: string;
-  initialTab?: ChatTab;
-}) {
+export function ChatPage({ initialTab = "listings" }: { initialTab?: ChatTab }) {
   const [tab, setTab] = useState<ChatTab>(initialTab);
 
   const { data: unread } = useChatUnreadCounts();
   const { data: avitoStatus } = useAvitoChatStatus();
-  const { data: vkStatus } = useVkChatStatus();
   const avitoSync = useSyncAvitoChat();
-  const vkSync = useSyncVkChat();
 
   const refreshActive = () => {
-    if (tab === "avito" && avitoStatus?.connected) {
-      avitoSync.mutate();
-      return;
-    }
-    if (tab === "vk" && vkStatus?.connected) {
-      vkSync.mutate();
-    }
+    if (avitoStatus?.connected) avitoSync.mutate();
   };
 
-  const refreshPending =
-    tab === "avito" ? avitoSync.isPending : tab === "vk" ? vkSync.isPending : false;
-
-  const canRefresh =
-    (tab === "avito" && avitoStatus?.connected) || (tab === "vk" && vkStatus?.connected);
+  const refreshPending = avitoSync.isPending;
+  const canRefresh = Boolean(avitoStatus?.connected);
 
   useEffect(() => {
     if (!avitoStatus?.connected) return;
@@ -51,28 +32,23 @@ export function ChatPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [avitoStatus?.connected]);
 
-  useEffect(() => {
-    if (!vkStatus?.connected) return;
-    vkSync.mutate();
-    const id = window.setInterval(() => vkSync.mutate(), 20_000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vkStatus?.connected]);
-
   return (
     <div>
-      <PageHeader title="Чат" description="Сообщения из Авито и ВКонтакте" />
+      <PageHeader
+        title="Чат"
+        description="Сообщения Авито по объявлениям и в личке"
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as ChatTab)} className="w-full">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <TabsList>
-            <TabsTrigger value="avito" className="gap-2">
-              Авито
-              <ChatUnreadBadge count={unread?.avito ?? 0} size="xs" />
+            <TabsTrigger value="listings" className="gap-2">
+              Объявления
+              <ChatUnreadBadge count={unread?.listings ?? 0} size="xs" />
             </TabsTrigger>
-            <TabsTrigger value="vk" className="gap-2">
-              ВКонтакте
-              <ChatUnreadBadge count={unread?.vk ?? 0} size="xs" />
+            <TabsTrigger value="personal" className="gap-2">
+              Личные сообщения
+              <ChatUnreadBadge count={unread?.personal ?? 0} size="xs" />
             </TabsTrigger>
           </TabsList>
 
@@ -92,12 +68,12 @@ export function ChatPage({
           </Button>
         </div>
 
-        <TabsContent value="avito" className="mt-0">
-          <AvitoChatPanel />
+        <TabsContent value="listings" className="mt-0">
+          <AvitoChatPanel kind="u2i" />
         </TabsContent>
 
-        <TabsContent value="vk" className="mt-0">
-          <VkChatPanel oauthCode={oauthCode} />
+        <TabsContent value="personal" className="mt-0">
+          <AvitoChatPanel kind="u2u" />
         </TabsContent>
       </Tabs>
     </div>

@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { ChatPage } from "@/components/chat-page";
+import { ChatPage, type ChatTab } from "@/components/chat-page";
 
 const chatSearchSchema = z.object({
-  code: z.string().optional(),
-  state: z.string().optional(),
-  tab: z.enum(["vk", "avito"]).optional(),
+  tab: z.enum(["listings", "personal", "vk", "avito"]).optional(),
 });
+
+function normalizeChatTab(tab?: z.infer<typeof chatSearchSchema>["tab"]): ChatTab {
+  if (tab === "personal" || tab === "vk") return "personal";
+  if (tab === "listings" || tab === "avito") return "listings";
+  return "listings";
+}
 
 export const Route = createFileRoute("/chat")({
   validateSearch: chatSearchSchema,
@@ -14,6 +18,6 @@ export const Route = createFileRoute("/chat")({
 });
 
 function ChatRoute() {
-  const { code, tab } = Route.useSearch();
-  return <ChatPage oauthCode={code} initialTab={tab ?? "avito"} />;
+  const { tab } = Route.useSearch();
+  return <ChatPage initialTab={normalizeChatTab(tab)} />;
 }
