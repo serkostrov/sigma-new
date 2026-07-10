@@ -15,5 +15,18 @@ export default defineConfig({
   // Node.js server output for Docker / Dokploy (`.output/server/index.mjs`)
   nitro: {
     preset: "node-server",
+    // Пробрасываем секреты в runtime (не в клиентский бандл)
+    env: [
+      "AVITO_CLIENT_ID",
+      "AVITO_CLIENT_SECRET",
+      "AVITO_USER_ID",
+      "VK_ACCESS_TOKEN",
+      "VK_APP_ID",
+      "VK_APP_SECRET",
+      "VK_REDIRECT_URI",
+      "SUPABASE_URL",
+      "SUPABASE_PUBLISHABLE_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+    ],
   },
 });

@@ -21,46 +21,66 @@ import { AVITO_ATTACHMENT_MAX_BYTES } from "./avito/avito-media";
 async function userCanChat(
   supabase: SupabaseClient<Database>,
   userId: string,
-): Promise<boolean> {
-  const { data, error } = await supabase.rpc("user_has_permission", {
-    _user_id: userId,
-    _key: "chat.view",
-  });
-  if (error) throw error;
-  return Boolean(data);
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc("user_has_permission", {
+      _user_id: userId,
+      _key: "chat.view",
+    });
+    if (error) return error.message;
+    if (!data) return "Нет доступа к чату";
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Нет доступа к чату";
+  }
 }
 
 export const getAvitoChatStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
-
-    const configured = avitoCredentialsConfigured();
-    if (!configured) {
-      return {
-        connected: false,
-        userId: null as number | null,
-        messengerApiAvailable: false,
-      };
-    }
-
     try {
+      const { supabase, userId } = context;
+      const accessError = await userCanChat(supabase, userId);
+      if (accessError) {
+        return {
+          connected: false,
+          configured: avitoCredentialsConfigured(),
+          userId: null as number | null,
+          messengerApiAvailable: false,
+          error: accessError,
+        };
+      }
+
+      const configured = avitoCredentialsConfigured();
+      if (!configured) {
+        return {
+          connected: false,
+          configured: false,
+          userId: null as number | null,
+          messengerApiAvailable: false,
+          error: "AVITO_CLIENT_ID и AVITO_CLIENT_SECRET не заданы на сервере",
+        };
+      }
+
       const token = await getAvitoAccessToken();
       const avitoUserId = await resolveAvitoUserId(token);
       const cached = getAvitoMessengerApiAvailable();
       return {
         connected: true,
+        configured: true,
         userId: avitoUserId,
         messengerApiAvailable: cached !== false,
+        error: null as string | null,
       };
-    } catch {
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Не удалось подключиться к API Авито";
       return {
         connected: false,
+        configured: avitoCredentialsConfigured(),
         userId: null as number | null,
         messengerApiAvailable: false,
+        error: message,
       };
     }
   });
@@ -69,9 +89,8 @@ export const syncAvitoChat = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     if (!avitoCredentialsConfigured()) {
       throw new Error(
@@ -87,9 +106,8 @@ export const syncAvitoChatMessagesFn = createServerFn({ method: "POST" })
   .validator((data: { chatId: string }) => data)
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     const token = await getAvitoAccessToken();
     const avitoUserId = await resolveAvitoUserId(token);
@@ -111,9 +129,8 @@ export const sendAvitoChatMessage = createServerFn({ method: "POST" })
   .validator((data: { chatId: string; text: string }) => data)
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     if (!avitoCredentialsConfigured()) {
       throw new Error(
@@ -143,9 +160,8 @@ export const sendAvitoChatAttachment = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     if (!avitoCredentialsConfigured()) {
       throw new Error(
@@ -175,9 +191,8 @@ export const markAvitoChatReadFn = createServerFn({ method: "POST" })
   .validator((data: { chatId: string }) => data)
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     if (!avitoCredentialsConfigured()) {
       return { ok: false as const };

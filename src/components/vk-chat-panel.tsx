@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { Loader2, MessageCircle, Paperclip, Send } from "lucide-react";
 import { toast } from "sonner";
+import { formatQueryError } from "@/lib/query-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -35,7 +36,7 @@ function conversationInitials(title: string): string {
 }
 
 function VkConnectPanel() {
-  const { data: status, isLoading } = useVkChatStatus();
+  const { data: status, isLoading, isError, error } = useVkChatStatus();
   const authUrl = useVkAuthUrl();
   const connect = useConnectVk();
 
@@ -44,6 +45,26 @@ function VkConnectPanel() {
       <div className="flex items-center justify-center p-12 text-muted-foreground">
         <Loader2 className="w-5 h-5 animate-spin mr-2" />
         Проверка подключения…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="max-w-lg mx-auto mt-8 p-8 bg-muted/30 border border-border rounded-xl text-center space-y-4">
+        <MessageCircle className="w-12 h-12 mx-auto text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Не удалось проверить ВКонтакте</h2>
+        <p className="text-sm text-destructive">{formatQueryError(error)}</p>
+      </div>
+    );
+  }
+
+  if (status?.error) {
+    return (
+      <div className="max-w-lg mx-auto mt-8 p-8 bg-muted/30 border border-border rounded-xl text-center space-y-4">
+        <MessageCircle className="w-12 h-12 mx-auto text-muted-foreground" />
+        <h2 className="text-lg font-semibold">ВКонтакте недоступен</h2>
+        <p className="text-sm text-destructive">{status.error}</p>
       </div>
     );
   }

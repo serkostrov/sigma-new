@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useChatSessionReady } from "@/lib/chat-session-query";
 import {
   connectVkWithCode,
   getVkAuthUrl,
@@ -48,10 +49,17 @@ async function fetchVkMessages(peerId: number): Promise<VkChatMessage[]> {
 }
 
 export function useVkChatStatus() {
-  return useQuery({
+  const { ready, authLoading } = useChatSessionReady();
+  const query = useQuery({
     queryKey: VK_STATUS_KEY,
     queryFn: () => getVkChatStatus(),
+    enabled: ready,
+    retry: 1,
   });
+  return {
+    ...query,
+    isLoading: authLoading || query.isLoading,
+  };
 }
 
 export function useVkConversations() {

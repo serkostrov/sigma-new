@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useChatSessionReady } from "@/lib/chat-session-query";
 import {
   getAvitoChatStatus,
   markAvitoChatReadFn,
@@ -94,10 +95,17 @@ async function fetchAvitoPreview(chatId: string): Promise<AvitoChatMessage[]> {
 }
 
 export function useAvitoChatStatus() {
-  return useQuery({
+  const { ready, authLoading } = useChatSessionReady();
+  const query = useQuery({
     queryKey: AVITO_STATUS_KEY,
     queryFn: () => getAvitoChatStatus(),
+    enabled: ready,
+    retry: 1,
   });
+  return {
+    ...query,
+    isLoading: authLoading || query.isLoading,
+  };
 }
 
 export function useAvitoConversations() {

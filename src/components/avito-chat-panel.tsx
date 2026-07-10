@@ -17,6 +17,7 @@ import {
   type AvitoConversation,
 } from "@/lib/avito-chat-api";
 import { toast } from "sonner";
+import { formatQueryError, isDatabaseErrorMessage } from "@/lib/query-error";
 
 function formatMessageTime(unixSeconds: number): string {
   return format(new Date(unixSeconds * 1000), "dd MMM, HH:mm", { locale: ru });
@@ -32,13 +33,47 @@ function conversationInitials(title: string): string {
 }
 
 function AvitoConnectPanel() {
-  const { isLoading } = useAvitoChatStatus();
+  const { data: status, isLoading, isError, error } = useAvitoChatStatus();
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-12 text-muted-foreground">
         <Loader2 className="w-5 h-5 animate-spin mr-2" />
         Проверка подключения…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="max-w-lg mx-auto mt-8 p-8 bg-muted/30 border border-border rounded-xl text-center space-y-4">
+        <ShoppingBag className="w-12 h-12 mx-auto text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Не удалось проверить Авито</h2>
+        <p className="text-sm text-destructive">{formatQueryError(error)}</p>
+      </div>
+    );
+  }
+
+  if (status?.error) {
+    const dbError = isDatabaseErrorMessage(status.error);
+    return (
+      <div className="max-w-lg mx-auto mt-8 p-8 bg-muted/30 border border-border rounded-xl text-center space-y-4">
+        <ShoppingBag className="w-12 h-12 mx-auto text-muted-foreground" />
+        <h2 className="text-lg font-semibold">
+          {dbError
+            ? "Ошибка базы данных"
+            : status.configured
+              ? "Не удалось подключить Авито"
+              : "Авито не настроен на сервере"}
+        </h2>
+        <p className="text-sm text-destructive">{status.error}</p>
+        <p className="text-xs text-muted-foreground">
+          {dbError
+            ? "Примените миграцию supabase/migrations/20260710120000_fix_role_permissions_schema.sql на сервере Supabase (SQL Editor → Run)."
+            : status.configured
+              ? "Ключи заданы, но API Авито вернул ошибку. Проверьте client_id и client_secret в Dokploy → Environment и перезапустите приложение."
+              : "Добавьте AVITO_CLIENT_ID и AVITO_CLIENT_SECRET в Dokploy → Environment (или в локальный .env) и перезапустите приложение."}
+        </p>
       </div>
     );
   }

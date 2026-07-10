@@ -1,3 +1,4 @@
+import { serverEnv } from "@/lib/server-env";
 import {
   avitoApiCall,
   type AvitoSelfAccount,
@@ -11,12 +12,12 @@ type TokenCache = {
 let cachedToken: TokenCache | null = null;
 
 export function avitoCredentialsConfigured(): boolean {
-  return Boolean(process.env.AVITO_CLIENT_ID && process.env.AVITO_CLIENT_SECRET);
+  return Boolean(serverEnv("AVITO_CLIENT_ID") && serverEnv("AVITO_CLIENT_SECRET"));
 }
 
 export async function getAvitoAccessToken(): Promise<string> {
-  const clientId = process.env.AVITO_CLIENT_ID;
-  const clientSecret = process.env.AVITO_CLIENT_SECRET;
+  const clientId = serverEnv("AVITO_CLIENT_ID");
+  const clientSecret = serverEnv("AVITO_CLIENT_SECRET");
   if (!clientId || !clientSecret) {
     throw new Error("AVITO_CLIENT_ID и AVITO_CLIENT_SECRET не заданы в .env");
   }
@@ -58,7 +59,7 @@ export async function getAvitoAccessToken(): Promise<string> {
 }
 
 export async function resolveAvitoUserId(accessToken: string): Promise<number> {
-  const fromEnv = process.env.AVITO_USER_ID;
+  const fromEnv = serverEnv("AVITO_USER_ID");
   if (fromEnv) {
     const parsed = Number(fromEnv);
     if (!Number.isNaN(parsed)) return parsed;

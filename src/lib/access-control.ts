@@ -325,6 +325,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<AppRole, Record<PermissionKey, boo
     "brigades.manage",
     "settings.view",
     "settings.catalogs",
+    "chat.view",
   ),
   foreman: grant(
     "objects.view_scoped",

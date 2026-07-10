@@ -28,6 +28,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=8090
+# Runtime secrets (Dokploy Environment): AVITO_*, VK_*, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
 
 COPY --from=builder /app/.output ./.output
 COPY --from=builder /app/package.json ./package.json

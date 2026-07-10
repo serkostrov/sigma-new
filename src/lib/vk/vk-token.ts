@@ -1,12 +1,12 @@
 import type { ChatDb } from "@/lib/chat-db";
+import { serverEnv } from "@/lib/server-env";
 
 export async function resolveVkAccessToken(
   db: ChatDb,
   userId: string,
 ): Promise<string | null> {
-  if (process.env.VK_ACCESS_TOKEN) {
-    return process.env.VK_ACCESS_TOKEN;
-  }
+  const envToken = serverEnv("VK_ACCESS_TOKEN");
+  if (envToken) return envToken;
 
   const { data, error } = await db
     .from("vk_connections")
@@ -25,11 +25,11 @@ export async function resolveVkAccessToken(
 }
 
 export function vkAppConfigured(): boolean {
-  return Boolean(process.env.VK_APP_ID && process.env.VK_APP_SECRET);
+  return Boolean(serverEnv("VK_APP_ID") && serverEnv("VK_APP_SECRET"));
 }
 
 export function vkRedirectUri(): string {
-  const base = process.env.VK_REDIRECT_URI ?? process.env.APP_URL ?? "http://localhost:8090";
+  const base = serverEnv("VK_REDIRECT_URI") ?? serverEnv("APP_URL") ?? "http://localhost:8090";
   return `${base.replace(/\/$/, "")}/chat`;
 }
 
@@ -38,8 +38,8 @@ export async function exchangeVkCode(code: string): Promise<{
   user_id: number;
   expires_in?: number;
 }> {
-  const clientId = process.env.VK_APP_ID;
-  const clientSecret = process.env.VK_APP_SECRET;
+  const clientId = serverEnv("VK_APP_ID");
+  const clientSecret = serverEnv("VK_APP_SECRET");
   if (!clientId || !clientSecret) {
     throw new Error("VK_APP_ID и VK_APP_SECRET не заданы в переменных окружения");
   }

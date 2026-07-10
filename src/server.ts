@@ -1,6 +1,9 @@
 import "./lib/error-capture";
 
+import { loadServerEnv } from "@/lib/server-env";
 import { consumeLastCapturedError } from "./lib/error-capture";
+
+loadServerEnv();
 import { renderErrorPage } from "./lib/error-page";
 
 type ServerEntry = {

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { serverEnv } from "@/lib/server-env";
 import {
   exchangeVkCode,
   resolveVkAccessToken,
@@ -20,44 +21,68 @@ import {
 async function userCanChat(
   supabase: SupabaseClient<Database>,
   userId: string,
-): Promise<boolean> {
-  const { data, error } = await supabase.rpc("user_has_permission", {
-    _user_id: userId,
-    _key: "chat.view",
-  });
-  if (error) throw error;
-  return Boolean(data);
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc("user_has_permission", {
+      _user_id: userId,
+      _key: "chat.view",
+    });
+    if (error) return error.message;
+    if (!data) return "Нет доступа к чату";
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Нет доступа к чату";
+  }
 }
 
 export const getVkChatStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
+    try {
+      const { supabase, userId } = context;
+      const accessError = await userCanChat(supabase, userId);
+      if (accessError) {
+        return {
+          connected: false,
+          viaEnv: false,
+          oauthAvailable: vkAppConfigured(),
+          redirectUri: vkRedirectUri(),
+          appId: serverEnv("VK_APP_ID") ?? null,
+          error: accessError,
+        };
+      }
+
+      const token = await resolveVkAccessToken(supabase, userId);
+      const envToken = Boolean(serverEnv("VK_ACCESS_TOKEN"));
+
+      return {
+        connected: Boolean(token),
+        viaEnv: envToken,
+        oauthAvailable: vkAppConfigured(),
+        redirectUri: vkRedirectUri(),
+        appId: serverEnv("VK_APP_ID") ?? null,
+        error: null as string | null,
+      };
+    } catch (error) {
+      return {
+        connected: false,
+        viaEnv: false,
+        oauthAvailable: vkAppConfigured(),
+        redirectUri: vkRedirectUri(),
+        appId: serverEnv("VK_APP_ID") ?? null,
+        error: error instanceof Error ? error.message : "Не удалось проверить VK",
+      };
     }
-
-    const token = await resolveVkAccessToken(supabase, userId);
-    const envToken = Boolean(process.env.VK_ACCESS_TOKEN);
-
-    return {
-      connected: Boolean(token),
-      viaEnv: envToken,
-      oauthAvailable: vkAppConfigured(),
-      redirectUri: vkRedirectUri(),
-      appId: process.env.VK_APP_ID ?? null,
-    };
   });
 
 export const getVkAuthUrl = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
-    const appId = process.env.VK_APP_ID;
+    const appId = serverEnv("VK_APP_ID");
     if (!appId) {
       throw new Error("VK_APP_ID не задан");
     }
@@ -81,9 +106,8 @@ export const connectVkWithCode = createServerFn({ method: "POST" })
   .validator((data: { code: string }) => data)
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     const tokenData = await exchangeVkCode(data.code);
     await saveVkConnection(
@@ -102,9 +126,8 @@ export const syncVkChat = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     const token = await resolveVkAccessToken(supabase, userId);
     if (!token) {
@@ -119,9 +142,8 @@ export const syncVkPeerMessages = createServerFn({ method: "POST" })
   .validator((data: { peerId: number }) => data)
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     const token = await resolveVkAccessToken(supabase, userId);
     if (!token) {
@@ -138,9 +160,8 @@ export const sendVkChatMessage = createServerFn({ method: "POST" })
   .validator((data: { peerId: number; text: string }) => data)
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     const text = data.text.trim();
     if (!text) throw new Error("Сообщение пустое");
@@ -164,9 +185,8 @@ export const markVkChatReadFn = createServerFn({ method: "POST" })
   .validator((data: { peerId: number }) => data)
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    if (!(await userCanChat(supabase, userId))) {
-      throw new Error("Нет доступа к чату");
-    }
+    const accessError = await userCanChat(supabase, userId);
+    if (accessError) throw new Error(accessError);
 
     const token = await resolveVkAccessToken(supabase, userId);
     if (!token) return { ok: false as const };

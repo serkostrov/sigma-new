@@ -7,9 +7,14 @@ const csrfMiddleware = createCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === "serverFn",
 });
 
-const errorMiddleware = createMiddleware().server(async ({ next }) => {
+const errorMiddleware = createMiddleware().server(async (ctx) => {
+  // Server functions сериализуют ошибки сами; HTML-ответ ломает RPC-клиент.
+  if ("handlerType" in ctx && ctx.handlerType === "serverFn") {
+    return ctx.next();
+  }
+
   try {
-    return await next();
+    return await ctx.next();
   } catch (error) {
     if (error != null && typeof error === "object" && "statusCode" in error) {
       throw error;

@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "npm@11.16.0",
   "scripts": {
-    "dev": "vite dev",
+    "dev": "node --env-file=.env ./node_modules/vite/bin/vite.js dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "start": "node .output/server/index.mjs",
